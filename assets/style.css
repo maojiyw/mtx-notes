@@ -49,7 +49,7 @@ b,strong{font-weight:600;color:#fff}
 .cta:hover{filter:brightness(1.1)}
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
 .kpi{background:var(--card);padding:16px 18px}
-.kpi span{font-size:12px;color:var(--muted)}
+.kpi > span{font-size:12px;color:var(--muted)}
 .kpi b{display:block;font-size:21px;margin:2px 0;font-weight:600}
 .kpi em{font-style:normal;font-size:12px;color:var(--muted)}
 
@@ -160,6 +160,21 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
 /* ---------- responsive ---------- */
 .mini-empty{height:100%;display:grid;place-items:center;color:var(--dim);font-size:13px;padding:16px;text-align:center}
 
+/* ---------- daily chips page ---------- */
+.loading{padding:40px 0;color:var(--muted);text-align:center}
+.sigs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:14px}
+.sigs-h{font-size:12px;color:var(--muted);margin-right:4px}
+.sigs-last{font-size:12px;color:var(--muted);margin-left:auto}
+.kpis.k4{grid-template-columns:repeat(4,1fr)}
+.tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:3px}
+.tabs button{font:inherit;font-size:12px;color:var(--muted);background:none;border:0;border-radius:6px;padding:4px 10px;cursor:pointer}
+.tabs button.on{background:var(--card2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line2)}
+.stack{display:grid;gap:12px}
+.chart.tall{height:260px}
+.t.daily td,.t.daily th{white-space:nowrap}
+.t.daily tr.sig td{background:rgba(239,68,68,.08)}
+.t.daily .sigcell{color:#F87171;font-size:12px;white-space:normal;min-width:120px}
+
 /* ---------- glossary tooltip ---------- */
 .term{border-bottom:1px dotted rgba(138,148,167,.75);cursor:help;outline:none;border-radius:2px}
 .term:hover,.term:focus-visible{border-bottom-color:var(--accent);background:rgba(59,130,246,.12)}
@@ -168,6 +183,7 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
 .tip b{display:block;color:var(--accent);font-size:12px;margin-bottom:2px}
 
 @media (max-width:900px){
+  .kpis.k4{grid-template-columns:1fr 1fr}
   .hero{grid-template-columns:1fr}
   .grid3{grid-template-columns:1fr}
   .grid2{grid-template-columns:1fr}
@@ -178,6 +194,9 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
   .r-ohlc{grid-template-columns:repeat(3,auto)}
 }
 @media (max-width:560px){
+  .kpis.k4{grid-template-columns:1fr}
+  .sigs-last{margin-left:0;width:100%}
+  .chart.tall{height:220px}
   body{font-size:14.5px}
   .brand span{display:none}
   .hero-main{padding:18px}

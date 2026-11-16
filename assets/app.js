@@ -22,8 +22,8 @@ const dayOf = t => DAILY.find(d=>d.time===t);
 
 /* ---------- nav ---------- */
 function nav(activeId){
-  const shown = D.reviews.filter((r,i)=>i<5||r.id===activeId);
-  const links = [`<a href="${base}index.html" class="${activeId?'':'on'}">主頁</a>`]
+  const shown = D.reviews.filter((r,i)=>i<4||r.id===activeId);
+  const links = [`<a href="${base}index.html" class="${activeId?'':'on'}">主頁</a>`,`<a href="${base}chips.html" class="${activeId==='chips'?'on':''}">每日籌碼</a>`]
     .concat(shown.map(r=>`<a href="${reviewUrl(r)}" class="${activeId===r.id?'on':''}">${md(r.date)}</a>`))
     .concat(D.reviews.length>shown.length?[`<a href="${base}index.html#list">全部 ${D.reviews.length} 篇</a>`]:[]);
   $('#nav').innerHTML = `<div class="nav-in"><a class="brand" href="${base}index.html"><div class="brand-logo">MTX</div><span>復盤筆記</span></a><nav class="nav-links">${links.join('')}</nav></div>`;
@@ -60,30 +60,43 @@ function indexChart(el,legendEl,{markers=[],highlight=null,clickable=false}={}){
   if(clickable) ch.subscribeClick(p=>{ if(!p||!p.time) return; const r=D.reviews.find(r=>r.date===p.time); if(r) location.href=reviewUrl(r); });
   return ch;
 }
-function chipCharts(ids,dates){
+function chipCharts(ids,C,{end=null,n=60}={}){
   if(!window.LightweightCharts) return;
-  const C=D.chips; const idx=C.dates.map((d,i)=>i).filter(i=>!dates||(C.dates[i]>=dates[0]&&C.dates[i]<=dates[1]));
+  let idx=C.dates.map((d,i)=>i).filter(i=>!end||C.dates[i]<=end); idx=idx.slice(-n);
   const pick=(arr)=>idx.map(i=>({time:C.dates[i],v:arr[i]})).filter(x=>x.v!=null);
-  const empty=(id,arr)=>{ if(pick(arr).length) return false; $(id).innerHTML='<p class="mini-empty">此期間筆記沒有這項籌碼資料</p>'; return true; };
-  if(empty(ids[0],C.fiOI)) return;
-  const c1=baseChart($(ids[0])); const h1=c1.addHistogramSeries({priceFormat:{type:'volume'}});
-  h1.setData(pick(C.fiOI).map(x=>({time:x.time,value:x.v,color:x.v>=0?UP:(x.v<=-10000?DN:'rgba(16,185,129,.5)')})));
-  h1.createPriceLine({price:-20000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'−2萬'}); c1.timeScale().fitContent();
-  const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
-  h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
-  h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'紅燈'}); c2.timeScale().fitContent();
-  if(empty(ids[2],C.rtLong)) return;
-  const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
-  const h3=c3.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},color:'rgba(239,68,68,.35)'});
-  h3.setData(pick(C.rtLong).map(x=>({time:x.time,value:x.v})));
-  const l3=c3.addLineSeries({color:'#F59E0B',lineWidth:2,priceFormat:{type:'custom',formatter:v=>v.toFixed(0)+'%'}});
-  l3.setData(pick(C.rtPct).map(x=>({time:x.time,value:x.v}))); c3.timeScale().fitContent();
+  const empty=(id,arr)=>{ if(pick(arr).length) return false; $(id).innerHTML='<p class="mini-empty">此期間沒有這項籌碼資料</p>'; return true; };
+  ids.forEach(id=>$(id).innerHTML='');
+  if(!empty(ids[0],C.fiOI)){
+    const c1=baseChart($(ids[0])); const h1=c1.addHistogramSeries({priceFormat:{type:'volume'}});
+    h1.setData(pick(C.fiOI).map(x=>({time:x.time,value:x.v,color:x.v>=0?UP:(x.v<=-10000?DN:'rgba(16,185,129,.5)')})));
+    h1.createPriceLine({price:-20000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'−2萬'}); c1.timeScale().fitContent();
+  }
+  if(!empty(ids[1],C.fiBP)){
+    const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
+    h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
+    h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'紅燈'}); c2.timeScale().fitContent();
+  }
+  if(!empty(ids[2],C.rtLong)){
+    const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
+    const h3=c3.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},color:'rgba(239,68,68,.35)'});
+    h3.setData(pick(C.rtLong).map(x=>({time:x.time,value:x.v})));
+    const l3=c3.addLineSeries({color:'#F59E0B',lineWidth:2,priceFormat:{type:'custom',formatter:v=>v.toFixed(0)+'%'}});
+    l3.setData(pick(C.rtPct).map(x=>({time:x.time,value:x.v}))); c3.timeScale().fitContent();
+  }
+}
+/* 籌碼小圖：優先讀 Google 試算表，失敗時退回 data.js 裡筆記截圖判讀的數字 */
+function withChips(ids,opts,noteEl){
+  ids.forEach(id=>$(id).innerHTML='<p class="mini-empty">讀取試算表中…</p>');
+  const S=window.MTXSheet;
+  const go=(C,live)=>{ chipCharts(ids,C,opts); if(noteEl) noteEl.textContent = live?'資料來源：每日籌碼試算表（即時讀取）':'試算表讀取失敗，改用筆記截圖判讀的數字'; };
+  if(!S) return go(D.chips,false);
+  S.load().then(d=>go(S.asChips(d),true)).catch(()=>go(D.chips,false));
 }
 const chipCardsHTML = (p) => `
   <div class="grid3">
-    <div class="card"><div class="card-h">外資期貨未平倉 <span class="sub">口・相對結算日</span></div><div class="mini" id="${p}1"></div></div>
-    <div class="card"><div class="card-h">外資 BP 金額 <span class="sub">千元・紫＝過熱</span></div><div class="mini" id="${p}2"></div></div>
-    <div class="card"><div class="card-h">散戶多單 <span class="sub">柱＝口數・線＝持倉比</span></div><div class="mini" id="${p}3"></div></div>
+    <div class="card"><div class="card-h"><span>外資期貨未平倉</span> <span class="sub">口・相對結算日</span></div><div class="mini" id="${p}1"></div></div>
+    <div class="card"><div class="card-h"><span>外資 BP 金額</span> <span class="sub">千元・紫＝過熱</span></div><div class="mini" id="${p}2"></div></div>
+    <div class="card"><div class="card-h"><span>散戶多單</span> <span class="sub">柱＝口數・線＝持倉比</span></div><div class="mini" id="${p}3"></div></div>
   </div>`;
 
 /* ---------- tables ---------- */
@@ -135,7 +148,7 @@ function renderHome(){
 
   $('#timeline').innerHTML = D.campaign.timeline.map(x=>`<div class="tl" style="--c:${x.c}"><b>${x.d}</b><em>${x.v}</em><span>${x.t}</span></div>`).join('');
   $('#chips').innerHTML = chipCardsHTML('hc');
-  chipCharts(['#hc1','#hc2','#hc3']);
+  withChips(['#hc1','#hc2','#hc3'],{n:60},$('#chipsNote'));
 }
 
 /* =====================================================================
@@ -163,7 +176,7 @@ function renderReview(id){
       <div class="r-actions"><a class="btn" href="${pdfUrl(r)}" target="_blank" rel="noopener">📄 原始筆記 PDF</a><a class="btn" href="#market">📰 當週市場資訊</a><span class="badge" style="align-self:center">部位：${r.position}</span></div>
     </div>
     <div class="card tldr sec" style="margin-top:12px"><h2>本週重點</h2><ol>${r.tldr.map(x=>`<li>${x}</li>`).join('')}</ol></div>
-    <div class="toc">${parts.map((p,k)=>`<a href="#${p.anchor}">${CN[k]}、${p.h}</a>`).join('')}${r.week[1]<D.chips.dates[0]?'':'<a href="#chips">籌碼圖</a>'}<a href="#market">當週市場資訊</a></div>`;
+    <div class="toc">${parts.map((p,k)=>`<a href="#${p.anchor}">${CN[k]}、${p.h}</a>`).join('')}<a href="#chips">籌碼圖</a><a href="#market">當週市場資訊</a></div>`;
 
   const body = parts.map((p,k)=>`
     <section class="card part sec" id="${p.anchor}">
@@ -184,8 +197,8 @@ function renderReview(id){
       <div class="body">${m.facts.length?`<div class="facts">${m.facts.map(([k,v])=>`<span class="fact"><i>${k}</i>${v}</span>`).join('')}</div>`:''}<ul>${m.notes.map(n=>`<li>${n}</li>`).join('')}</ul></div></div>`; }).join('');
 
   const market = `
-    <section class="sec" id="chips"${r.week[1]<D.chips.dates[0]?' hidden':''}>
-      <div class="sec-h"><h2>籌碼圖</h2><p>取自筆記中的籌碼表，到本週為止</p></div>
+    <section class="sec" id="chips">
+      <div class="sec-h"><h2>籌碼圖</h2><p>本週為止的近 60 個交易日・<span id="chipsNote">讀取中</span>・<a href="../chips.html">看每日籌碼 →</a></p></div>
       ${chipCardsHTML('rc')}
     </section>
     <section class="sec" id="market">
@@ -204,7 +217,103 @@ function renderReview(id){
   $('#main').innerHTML = head + body + market;
   const marks = D.campaign.events.filter(e=>e.time<=r.week[1]);
   indexChart($('#chart'),$('#legend'),{markers:marks,highlight:r.week});
-  if(r.week[1]>=D.chips.dates[0]) chipCharts(['#rc1','#rc2','#rc3'],[D.chips.dates[0],r.week[1]]);
+  withChips(['#rc1','#rc2','#rc3'],{end:r.week[1],n:60},$('#chipsNote'));
+}
+
+/* =====================================================================
+   每日籌碼頁（讀 Google 試算表）
+   ===================================================================== */
+const SIG = [['sigSPQty','外資 SP 口數'],['sigSPAmt','外資 SP 金額'],['sigMicro','落底・微台'],['sigBoth','落底・小+微'],['sigAmp','落底・幅度'],['sigStrong','強烈落底'],['sig3','連續三天期貨逆增']];
+const sigOn = v => v!=null && v!=='' && v!=='0';
+const sigList = r => SIG.filter(([k])=>sigOn(r[k])).map(([k,t])=>(/^\d+$/.test(r[k])?`${t} ${r[k]}`:t));
+const n0 = v => v==null?'—':fmt(v,0);
+const n2 = v => v==null?'—':fmt(v,2);
+const sgn0 = v => v==null?'—':`<span class="${cls(v)}">${sign(v)}${fmt(v,0)}</span>`;
+const pctTxt = v => v==null?'—':v+'%';
+
+function renderChips(){
+  nav('chips');
+  const main=$('#main');
+  window.MTXSheet.load().then(data=>{
+    const R=data.rows, L=R[R.length-1], P=R[R.length-2]||{};
+    const lastStrong=[...R].reverse().find(r=>sigOn(r.sigStrong));
+    const sigs=sigList(L);
+    const delta=k=>L[k]!=null&&P[k]!=null?L[k]-P[k]:null;
+    const kpi=(label,val,sub)=>`<div class="kpi"><span>${label}</span><b class="num">${val}</b><em>${sub}</em></div>`;
+    const ranges=[['3M',63],['6M',126],['1Y',250],['3Y',750],['全部',0]];
+    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空','多單紅・空單綠（口）']];
+    main.innerHTML = `
+      <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>每日籌碼</span></div>
+      <div class="card r-head">
+        <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）${L.settle===999?'・結算日':''}</div>
+        <h1>每日籌碼</h1>
+        <div class="r-ohlc num">
+          <div><span>加權收盤</span><b class="${cls(L.chg)}">${n2(L.idx)}</b></div>
+          <div><span>漲跌</span><b class="${cls(L.chg)}">${sign(L.chg)}${n2(L.chg)}（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</b></div>
+          <div><span>成交量</span><b>${n0(L.vol)} 億</b></div>
+          <div><span>外資現貨</span><b class="${cls(L.fiSpot)}">${sign(L.fiSpot)}${n2(L.fiSpot)} 億</b></div>
+        </div>
+        <div class="sigs"><span class="sigs-h">今日訊號</span>${sigs.length?sigs.map(t=>`<span class="pill r">${t}</span>`).join(''):'<span class="pill">無落底訊號</span>'}
+          ${lastStrong?`<span class="sigs-last">最近一次強烈落底：<b class="num">${lastStrong.date.replace(/-/g,'/')}</b></span>`:''}</div>
+      </div>
+      <div class="card" style="margin-top:12px"><div class="kpis k4">
+        ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`前日增減 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
+        ${kpi('外資 BP 金額',n0(L.bp),`較前日 ${sgn0(delta('bp'))}・BP/SP 增幅比 ${L.bpsp==null?'—':L.bpsp.toFixed(1)+'%'}`)}
+        ${kpi('外資 BC／SC 金額',`${n0(L.bc)}／${n0(L.sc)}`,`BC/SC 增幅比 ${L.bcsc==null?'—':L.bcsc.toFixed(1)+'%'}`)}
+        ${kpi('散戶多單／空單',`${n0(L.rtLong)}／${n0(L.rtShort)}`,`多單持倉百分位 ${pctTxt(L.rtLongPct)}・較前日 ${sgn0(delta('rtLong'))}`)}
+      </div></div>
+
+      <section class="sec">
+        <div class="sec-h"><h2>籌碼走勢</h2><div class="tabs" id="range">${ranges.map(([t,n],i)=>`<button data-n="${n}" class="${i===1?'on':''}">${t}</button>`).join('')}</div></div>
+        <div class="stack">${panes.map(([h,sub],i)=>`
+          <div class="card"><div class="card-h"><span>${h}</span> <span class="sub">${sub}</span></div><div class="chart tall"><div class="chart-legend num" id="lg${i}"></div><div id="ch${i}" style="position:absolute;inset:0"></div></div></div>`).join('')}
+        </div>
+      </section>
+
+      <section class="sec" id="tbl">
+        <div class="sec-h"><h2>近 30 個交易日</h2><p>最新在最上面・紅底＝有落底訊號</p></div>
+        <div class="card"><div class="tscroll"><table class="t daily">
+          <thead><tr><th>日期</th><th class="r">加權</th><th class="r">漲跌%</th><th class="r">外資現貨(億)</th><th class="r">外資期貨<br>相對結算</th><th class="r">前日增減</th><th class="r">BP 金額</th><th class="r">散戶多</th><th class="r">散戶空</th><th class="r">多單百分位</th><th>訊號</th></tr></thead>
+          <tbody>${R.slice(-30).reverse().map(r=>{ const s=sigList(r); return `<tr${s.length?' class="sig"':''}>
+            <td class="num">${md(r.date)}</td><td class="r num">${n2(r.idx)}</td><td class="r num ${cls(r.pct)}">${r.pct==null?'—':sign(r.pct)+r.pct.toFixed(2)}</td>
+            <td class="r num ${cls(r.fiSpot)}">${n2(r.fiSpot)}</td><td class="r num ${cls(r.fiRel)}">${n0(r.fiRel)}</td><td class="r num ${cls(r.fiDelta)}">${n0(r.fiDelta)}</td>
+            <td class="r num">${n0(r.bp)}</td><td class="r num">${n0(r.rtLong)}</td><td class="r num">${n0(r.rtShort)}</td><td class="r num">${pctTxt(r.rtLongPct)}</td>
+            <td class="sigcell">${s.join('、')}</td></tr>`; }).join('')}</tbody></table></div></div>
+        ${data.missing.length?`<p class="chart-note">試算表中找不到這些欄位：${data.missing.join('、')}</p>`:''}
+      </section>`;
+
+    glossary(main);
+    if(!window.LightweightCharts) return;
+    const T=r=>r.date, byDate=new Map(R.map(r=>[r.date,r])), charts=[];
+    const legend=(i,fn,c)=>{ const el=$('#lg'+i); const show=t=>{ const r=byDate.get(t)||L; el.innerHTML=`<b>${r.date.replace(/-/g,'/')}</b> `+fn(r); }; show(L.date); c.subscribeCrosshairMove(p=>show(p&&p.time)); };
+    const mk=i=>{ const c=baseChart($('#ch'+i)); charts.push(c); return c; };
+    const lines=(c,defs)=>defs.forEach(([k,col])=>{ const x=c.addLineSeries({color:col,lineWidth:2,priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false}); x.setData(R.filter(r=>r[k]!=null).map(r=>({time:T(r),value:r[k]}))); });
+
+    let c=mk(0);
+    const s0=c.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.25)',bottomColor:'rgba(96,165,250,.02)',lineWidth:2,priceFormat:{type:'price',precision:0,minMove:1}});
+    s0.setData(R.map(r=>({time:T(r),value:r.idx})));
+    s0.setMarkers(R.filter(r=>sigOn(r.sigStrong)).map(r=>({time:T(r),position:'belowBar',color:UP,shape:'arrowUp'})));
+    legend(0,r=>`加權 <b>${n2(r.idx)}</b> <span class="${cls(r.chg)}">${sign(r.chg)}${n2(r.chg)}</span>${sigList(r).length?' ・<span class="up">'+sigList(r).join('、')+'</span>':''}`,c);
+
+    c=mk(1);
+    const s1=c.addHistogramSeries({priceFormat:{type:'volume'}});
+    s1.setData(R.filter(r=>r.fiRel!=null).map(r=>({time:T(r),value:r.fiRel,color:r.fiRel>=0?UP:(r.fiRel<=-10000?DN:'rgba(16,185,129,.5)')})));
+    s1.createPriceLine({price:-20000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'−2萬'});
+    s1.createPriceLine({price:10000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'+1萬'});
+    legend(1,r=>`相對結算 <b class="${cls(r.fiRel)}">${n0(r.fiRel)}</b> 前日 <span class="${cls(r.fiDelta)}">${n0(r.fiDelta)}</span> 總未平倉 ${n0(r.fiOI)}`,c);
+
+    c=mk(2); lines(c,[['sc','#10B981'],['bc','#EF4444'],['bp','#A855F7']]);
+    legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
+
+    c=mk(3); lines(c,[['rtShort','#10B981'],['rtLong','#EF4444']]);
+    legend(3,r=>`多 <b class="up">${n0(r.rtLong)}</b> 空 <b class="down">${n0(r.rtShort)}</b> 多單百分位 ${pctTxt(r.rtLongPct)}`,c);
+
+    const setRange=n=>{ const from=n?R[Math.max(0,R.length-n)].date:R[0].date; charts.forEach(ch=>ch.timeScale().setVisibleRange({from,to:L.date})); };
+    setRange(126);
+    $('#range').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; [...$('#range').children].forEach(x=>x.classList.toggle('on',x===b)); setRange(+b.dataset.n); });
+  }).catch(err=>{
+    main.innerHTML=`<div class="card r-head"><h1>每日籌碼</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
+  });
 }
 
 /* =====================================================================
@@ -260,4 +369,5 @@ function glossary(root){
 
 if(page==='home'){ renderHome(); glossary(document.querySelector('main')); }
 if(page==='review'){ renderReview(document.body.dataset.id); glossary($('#main')); }
+if(page==='chips') renderChips();
 })();
