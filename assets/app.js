@@ -22,8 +22,10 @@ const dayOf = t => DAILY.find(d=>d.time===t);
 
 /* ---------- nav ---------- */
 function nav(activeId){
+  const shown = D.reviews.filter((r,i)=>i<5||r.id===activeId);
   const links = [`<a href="${base}index.html" class="${activeId?'':'on'}">主頁</a>`]
-    .concat(D.reviews.map(r=>`<a href="${reviewUrl(r)}" class="${activeId===r.id?'on':''}">${md(r.date)}</a>`));
+    .concat(shown.map(r=>`<a href="${reviewUrl(r)}" class="${activeId===r.id?'on':''}">${md(r.date)}</a>`))
+    .concat(D.reviews.length>shown.length?[`<a href="${base}index.html#list">全部 ${D.reviews.length} 篇</a>`]:[]);
   $('#nav').innerHTML = `<div class="nav-in"><a class="brand" href="${base}index.html"><div class="brand-logo">MTX</div><span>復盤筆記</span></a><nav class="nav-links">${links.join('')}</nav></div>`;
 }
 
@@ -61,13 +63,16 @@ function indexChart(el,legendEl,{markers=[],highlight=null,clickable=false}={}){
 function chipCharts(ids,dates){
   if(!window.LightweightCharts) return;
   const C=D.chips; const idx=C.dates.map((d,i)=>i).filter(i=>!dates||(C.dates[i]>=dates[0]&&C.dates[i]<=dates[1]));
-  const pick=(arr)=>idx.map(i=>({time:C.dates[i],v:arr[i]}));
+  const pick=(arr)=>idx.map(i=>({time:C.dates[i],v:arr[i]})).filter(x=>x.v!=null);
+  const empty=(id,arr)=>{ if(pick(arr).length) return false; $(id).innerHTML='<p class="mini-empty">此期間筆記沒有這項籌碼資料</p>'; return true; };
+  if(empty(ids[0],C.fiOI)) return;
   const c1=baseChart($(ids[0])); const h1=c1.addHistogramSeries({priceFormat:{type:'volume'}});
   h1.setData(pick(C.fiOI).map(x=>({time:x.time,value:x.v,color:x.v>=0?UP:(x.v<=-10000?DN:'rgba(16,185,129,.5)')})));
   h1.createPriceLine({price:-20000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'−2萬'}); c1.timeScale().fitContent();
   const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
   h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
   h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'紅燈'}); c2.timeScale().fitContent();
+  if(empty(ids[2],C.rtLong)) return;
   const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
   const h3=c3.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},color:'rgba(239,68,68,.35)'});
   h3.setData(pick(C.rtLong).map(x=>({time:x.time,value:x.v})));
@@ -158,7 +163,7 @@ function renderReview(id){
       <div class="r-actions"><a class="btn" href="${pdfUrl(r)}" target="_blank" rel="noopener">📄 原始筆記 PDF</a><a class="btn" href="#market">📰 當週市場資訊</a><span class="badge" style="align-self:center">部位：${r.position}</span></div>
     </div>
     <div class="card tldr sec" style="margin-top:12px"><h2>本週重點</h2><ol>${r.tldr.map(x=>`<li>${x}</li>`).join('')}</ol></div>
-    <div class="toc">${parts.map((p,k)=>`<a href="#${p.anchor}">${CN[k]}、${p.h}</a>`).join('')}<a href="#chips">籌碼圖</a><a href="#market">當週市場資訊</a></div>`;
+    <div class="toc">${parts.map((p,k)=>`<a href="#${p.anchor}">${CN[k]}、${p.h}</a>`).join('')}${r.week[1]<D.chips.dates[0]?'':'<a href="#chips">籌碼圖</a>'}<a href="#market">當週市場資訊</a></div>`;
 
   const body = parts.map((p,k)=>`
     <section class="card part sec" id="${p.anchor}">
@@ -179,7 +184,7 @@ function renderReview(id){
       <div class="body">${m.facts.length?`<div class="facts">${m.facts.map(([k,v])=>`<span class="fact"><i>${k}</i>${v}</span>`).join('')}</div>`:''}<ul>${m.notes.map(n=>`<li>${n}</li>`).join('')}</ul></div></div>`; }).join('');
 
   const market = `
-    <section class="sec" id="chips">
+    <section class="sec" id="chips"${r.week[1]<D.chips.dates[0]?' hidden':''}>
       <div class="sec-h"><h2>籌碼圖</h2><p>取自筆記中的籌碼表，到本週為止</p></div>
       ${chipCardsHTML('rc')}
     </section>
@@ -199,7 +204,7 @@ function renderReview(id){
   $('#main').innerHTML = head + body + market;
   const marks = D.campaign.events.filter(e=>e.time<=r.week[1]);
   indexChart($('#chart'),$('#legend'),{markers:marks,highlight:r.week});
-  chipCharts(['#rc1','#rc2','#rc3'],[D.chips.dates[0],r.week[1]]);
+  if(r.week[1]>=D.chips.dates[0]) chipCharts(['#rc1','#rc2','#rc3'],[D.chips.dates[0],r.week[1]]);
 }
 
 /* =====================================================================

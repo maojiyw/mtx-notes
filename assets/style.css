@@ -158,6 +158,8 @@ table.t tr.hl td{background:rgba(59,130,246,.08)}
 footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:12px;line-height:1.8}
 
 /* ---------- responsive ---------- */
+.mini-empty{height:100%;display:grid;place-items:center;color:var(--dim);font-size:13px;padding:16px;text-align:center}
+
 /* ---------- glossary tooltip ---------- */
 .term{border-bottom:1px dotted rgba(138,148,167,.75);cursor:help;outline:none;border-radius:2px}
 .term:hover,.term:focus-visible{border-bottom-color:var(--accent);background:rgba(59,130,246,.12)}
