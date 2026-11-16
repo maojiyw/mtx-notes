@@ -22,11 +22,12 @@ const dayOf = t => DAILY.find(d=>d.time===t);
 
 /* ---------- nav ---------- */
 function nav(activeId){
-  const onChips = activeId==='chips';
+  const onChips = activeId==='chips', onTopics = activeId==='topics';
   $('#nav').innerHTML = `<div class="nav-in"><a class="brand" href="${base}index.html"><div class="brand-logo">MTX</div><span>復盤筆記</span></a>
     <nav class="nav-tabs">
-      <a href="${base}index.html#list" class="tab-review${onChips?'':' on'}"><i class="ico">▤</i>每週復盤<span class="cnt">${D.reviews.length}</span></a>
+      <a href="${base}index.html#list" class="tab-review${onChips||onTopics?'':' on'}"><i class="ico">▤</i>每週復盤<span class="cnt">${D.reviews.length}</span></a>
       <a href="${base}chips.html" class="tab-chips${onChips?' on':''}"><i class="live"></i>每日籌碼</a>
+      <a href="${base}topics.html" class="tab-search${onTopics?' on':''}" aria-label="搜尋與主題"><i class="ico">⌕</i><span class="lbl">搜尋</span></a>
     </nav></div>`;
 }
 
@@ -343,6 +344,157 @@ function renderChips(){
 }
 
 /* =====================================================================
+   全文搜尋與主題索引
+   ===================================================================== */
+const strip = s => String(s==null?'':s).replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ');
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const escHTML = s => s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const squash = s => s.replace(/\s/g,'').toLowerCase();
+// 忽略空白；英數開頭／結尾要是完整單字（BP 不會命中 BPS）
+function termPat(n){
+  const t=n.trim(); if(!t) return null;
+  const core=[...t.replace(/\s/g,'')].map(escRe).join('\\s*');
+  return (/^[A-Za-z0-9]/.test(t)?'(?<![A-Za-z0-9])':'')+core+(/[A-Za-z0-9]$/.test(t)?'(?![A-Za-z0-9])':'');
+}
+const glossOf = q => (D.glossary||[]).find(([names])=>names.split('|').some(n=>squash(n)===squash(q)));
+// 查詢字串 → {re, g}；與名詞表相符時一併搜尋同義詞（紫爆／紫燈）
+function queryRe(q){
+  const g=glossOf(q); const names=g?g[0].split('|'):[q];
+  const pats=names.map(termPat).filter(Boolean); if(!pats.length) return null;
+  return {re:new RegExp(pats.join('|'),'gi'), g};
+}
+// 每篇復盤拆成一條條可搜尋的句子
+const DOCS = new Map();
+function reviewDocs(r){
+  if(DOCS.has(r.id)) return DOCS.get(r.id);
+  const out=[]; const add=(a,l,t)=>{ t=strip(t).trim(); if(t) out.push({a,l,t}); };
+  add('','標題',r.title); add('','摘要',r.summary);
+  r.tldr.forEach(t=>add('','本週重點',t));
+  const tbl=(a,l,keys)=>(keys||[]).forEach(k=>{ const t=D.tables[k]; if(!t) return;
+    add(a,l+'・表格',t.title); t.rows.forEach(row=>add(a,l+'・'+strip(t.title),row.join('　'))); if(t.note) add(a,l+'・'+strip(t.title),t.note); });
+  const items=(a,l,xs)=>(xs||[]).forEach(x=>add(a,l,typeof x==='string'?x:x.t));
+  r.parts.forEach((p,k)=>{ const a='p'+(k+1);
+    items(a,p.h,p.items); tbl(a,p.h,p.tables); if(p.quote) add(a,p.h,p.quote);
+    (p.sub||[]).forEach(s=>{ items(a,p.h+'・'+s.h,s.items); tbl(a,p.h+'・'+s.h,s.tables); });
+  });
+  Object.entries(r.market||{}).forEach(([d,m])=>{ const l='市場資訊 '+md(d);
+    if(m.facts.length) add('market',l,m.facts.map(f=>f.join(' ')).join('、')); m.notes.forEach(n=>add('market',l,n)); });
+  DOCS.set(r.id,out); return out;
+}
+// 片段：命中處前後各取一些字，命中的字加 <mark>
+function snippet(t,re){
+  re.lastIndex=0; const m=re.exec(t); if(!m) return escHTML(t);
+  const s=Math.max(0,m.index-28), e=Math.min(t.length,m.index+m[0].length+60);
+  const w=t.slice(s,e); let h='', last=0; re.lastIndex=0; let x;
+  while((x=re.exec(w))){ if(!x[0]){ re.lastIndex++; continue; } h+=escHTML(w.slice(last,x.index))+'<mark>'+escHTML(x[0])+'</mark>'; last=x.index+x[0].length; }
+  return (s?'…':'')+h+escHTML(w.slice(last))+(e<t.length?'…':'');
+}
+function searchReviews(re){
+  return D.reviews.map(r=>{ const hits=reviewDocs(r).filter(d=>{ re.lastIndex=0; return re.test(d.t); });
+    const n=hits.reduce((c,d)=>c+(d.t.match(re)||[]).length,0); return {r,hits,n}; }).filter(x=>x.hits.length);
+}
+// 復盤日之後 n 個交易日的指數變化
+function after(date,n){
+  let i=-1; DAILY.forEach((d,k)=>{ if(d.time<=date) i=k; });
+  if(i<0||i+n>=DAILY.length) return null;
+  return (DAILY[i+n].value-DAILY[i].value)/DAILY[i].value*100;
+}
+const aftTxt = v => v==null?'<span class="dim">尚無</span>':`<span class="${cls(v)}">${sign(v)}${v.toFixed(2)}%</span>`;
+
+function renderTopics(){
+  nav('topics');
+  const params=new URLSearchParams(location.search); const q0=params.get('q')||'';
+  const chrono=D.reviews.slice().reverse();
+  const T=(D.topics||[]).map(([grp,names])=>[grp,names.map(n=>{ const qr=queryRe(n); const res=searchReviews(qr.re);
+    return {n,g:qr.g,res,ids:new Set(res.map(x=>x.r.id)),total:res.reduce((c,x)=>c+x.n,0)}; })]);
+
+  $('#main').innerHTML = `
+    <div class="card r-head">
+      <div class="eyebrow">全文搜尋・主題索引</div>
+      <h1>搜尋筆記</h1>
+      <form class="search" id="sform" role="search" action="topics.html">
+        <span class="search-ico" aria-hidden="true">⌕</span>
+        <input id="q" name="q" type="search" value="${escHTML(q0)}" placeholder="例如：強烈落底、國安基金、外資空單" autocomplete="off" aria-label="搜尋所有復盤">
+        <button type="button" class="search-x" id="qx" aria-label="清除">✕</button>
+      </form>
+      <p class="hint">搜尋全部 ${D.reviews.length} 篇復盤的內文、統計表與當週市場資訊。不分大小寫、忽略空白；同義詞會一起找（例如紫爆＝紫燈）。</p>
+    </div>
+    <div id="res"></div>
+    <section class="sec" id="topics">
+      <div class="sec-h"><h2>主題索引</h2><p>點主題看每次提到的週次與之後走勢・橫條＝${md(chrono[0].date)} 到 ${md(chrono[chrono.length-1].date)} 每篇一格</p></div>
+      ${T.map(([grp,ts])=>`<h3 class="tgrp">${grp}</h3><div class="tgrid">${ts.map(t=>`
+        <a class="card topic${t.res.length?'':' none'}" href="?q=${encodeURIComponent(t.n)}" data-q="${escHTML(t.n)}">
+          <div class="topic-h"><b>${t.n}</b><span class="num">${t.res.length} 篇</span></div>
+          <p>${t.g?t.g[1]:''}</p>
+          <div class="strip" aria-hidden="true">${chrono.map(r=>`<i class="${t.ids.has(r.id)?'on':''}"></i>`).join('')}</div>
+        </a>`).join('')}</div>`).join('')}
+    </section>`;
+
+  const inp=$('#q'), res=$('#res');
+  const run=(q,push)=>{
+    q=q.trim();
+    const url=q?'?q='+encodeURIComponent(q):location.pathname;
+    if(push) history.pushState(null,'',url); else history.replaceState(null,'',url);
+    $('#qx').hidden=!q; document.title=(q?`「${q}」搜尋｜`:'搜尋與主題｜')+'MTX 復盤筆記';
+    if(!q){ res.innerHTML=''; return; }
+    const qr=queryRe(q); if(!qr){ res.innerHTML=''; return; }
+    const R=searchReviews(qr.re), total=R.reduce((c,x)=>c+x.n,0);
+    const href=r=>`reviews/${r.id}.html?q=${encodeURIComponent(q)}`;
+    res.innerHTML = `<section class="sec">
+      ${qr.g?`<div class="card gdef"><b>${qr.g[0].split('|').join('／')}</b>${qr.g[1]}</div>`:''}
+      <div class="sec-h"><h2>「${escHTML(q)}」</h2><p>${R.length?`${R.length} 篇・共 ${total} 處・最新在最上面`:'沒有找到符合的內容'}</p></div>
+      ${R.length?`<div class="card tscroll"><table class="t ftbl"><thead><tr><th>復盤日</th><th class="r">當日收盤</th><th class="r">之後 5 日</th><th class="r">之後 20 日</th><th class="r">提到</th></tr></thead><tbody>
+        ${R.map(({r,n})=>`<tr><td><a href="${href(r)}">${r.date.replace(/-/g,'/')}</a></td><td class="r num">${fmt(r.close)}</td><td class="r num">${aftTxt(after(r.date,5))}</td><td class="r num">${aftTxt(after(r.date,20))}</td><td class="r num">${n} 處</td></tr>`).join('')}
+        </tbody></table><div class="tbl-n">「之後 N 日」＝復盤日收盤到第 N 個交易日收盤的加權指數變化，只是當週提到此主題後的大盤走勢，不代表訊號本身的績效。</div></div>
+      <div class="hits">${R.map(({r,hits,n})=>{ const show=hits.slice(0,4), more=hits.slice(4);
+        const li=d=>`<li><a href="${href(r)}${d.a?'#'+d.a:''}"><span class="hl-l">${escHTML(d.l)}</span>${snippet(d.t,qr.re)}</a></li>`;
+        return `<div class="card hit">
+          <a class="hit-h" href="${href(r)}"><span class="num">${r.date.replace(/-/g,'/')}</span><b>${r.title}</b><em class="num">${n} 處</em></a>
+          <ul>${show.map(li).join('')}</ul>
+          ${more.length?`<details><summary>再顯示 ${more.length} 處</summary><ul>${more.map(li).join('')}</ul></details>`:''}
+        </div>`; }).join('')}</div>`:`<div class="card empty">試試較短的關鍵字，或從下方主題索引挑一個。</div>`}
+    </section>`;
+  };
+  let tm; inp.addEventListener('input',()=>{ clearTimeout(tm); tm=setTimeout(()=>run(inp.value,false),180); });
+  $('#sform').addEventListener('submit',e=>{ e.preventDefault(); run(inp.value,false); inp.blur(); });
+  $('#qx').addEventListener('click',()=>{ inp.value=''; run('',false); inp.focus(); });
+  $('#topics').addEventListener('click',e=>{ const a=e.target.closest('.topic'); if(!a) return; e.preventDefault();
+    inp.value=a.dataset.q; run(a.dataset.q,true); res.scrollIntoView({behavior:'smooth',block:'start'}); });
+  window.addEventListener('popstate',()=>{ const q=new URLSearchParams(location.search).get('q')||''; inp.value=q; run(q,false); });
+  run(q0,false);
+  if(!q0) inp.focus();
+}
+
+// 從搜尋結果點進復盤頁：標出命中處，可逐一跳轉
+function highlightHits(root){
+  const q=(new URLSearchParams(location.search).get('q')||'').trim(); if(!q||!root) return;
+  const qr=queryRe(q); if(!qr) return; const re=qr.re;
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>
+    n.nodeValue.trim()&&!n.parentElement.closest('script,style,.chart,.toc,.crumb,.pager')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
+  const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
+  // 跨標籤的字（例如 <b>V</b> 轉）不處理，只標單一文字節點內的命中
+  nodes.forEach(node=>{ const t=node.nodeValue; re.lastIndex=0; if(!re.test(t)) return;
+    const f=document.createDocumentFragment(); let last=0, m; re.lastIndex=0;
+    while((m=re.exec(t))){ if(!m[0]){ re.lastIndex++; continue; } f.append(t.slice(last,m.index)); const k=document.createElement('mark'); k.className='hit-m'; k.textContent=m[0]; f.append(k); last=m.index+m[0].length; }
+    f.append(t.slice(last)); node.replaceWith(f); });
+  const marks=[...root.querySelectorAll('mark.hit-m')];
+  const bar=document.createElement('div'); bar.className='findbar';
+  bar.innerHTML=`<span>搜尋「<b>${escHTML(q)}</b>」${marks.length?`<span class="num" id="fpos"></span>`:'：本篇沒有直接命中（可能在跨格式的文字中）'}</span>
+    ${marks.length?'<button type="button" id="fprev" aria-label="上一處">↑</button><button type="button" id="fnext" aria-label="下一處">↓</button>':''}
+    <a href="../topics.html?q=${encodeURIComponent(q)}">回搜尋結果</a><button type="button" id="fclose" aria-label="關閉">✕</button>`;
+  document.body.append(bar);
+  let cur=-1;
+  const go=(i,instant)=>{ if(!marks.length) return; marks.forEach(m=>m.classList.remove('cur')); cur=(i+marks.length)%marks.length;
+    marks[cur].classList.add('cur'); marks[cur].scrollIntoView({behavior:instant?'auto':'smooth',block:'center'}); $('#fpos').textContent=`　${cur+1} / ${marks.length}`; };
+  if(marks.length){ $('#fprev').onclick=()=>go(cur-1); $('#fnext').onclick=()=>go(cur+1);
+    // 有指定段落就從該段的第一處開始
+    const sec=location.hash&&document.getElementById(location.hash.slice(1));
+    const first=sec?marks.findIndex(m=>sec.contains(m)):0; setTimeout(()=>go(Math.max(0,first),true),60); }
+  $('#fclose').onclick=()=>{ bar.remove(); marks.forEach(m=>m.replaceWith(...m.childNodes)); root.normalize();
+    history.replaceState(null,'',location.pathname+location.hash); };
+}
+
+/* =====================================================================
    專有名詞懸浮說明
    ===================================================================== */
 function glossary(root){
@@ -394,6 +546,7 @@ function glossary(root){
 }
 
 if(page==='home'){ renderHome(); glossary(document.querySelector('main')); }
-if(page==='review'){ renderReview(document.body.dataset.id); glossary($('#main')); }
+if(page==='review'){ renderReview(document.body.dataset.id); highlightHits($('#main')); glossary($('#main')); }
 if(page==='chips') renderChips();
+if(page==='topics'){ renderTopics(); }
 })();
