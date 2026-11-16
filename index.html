@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTX 復盤筆記</title>
+<meta name="description" content="台股大盤與小台指每週復盤：籌碼、訊號統計與部位紀錄。">
+<meta property="og:title" content="MTX 復盤筆記">
+<meta property="og:description" content="台股大盤與小台指每週復盤：籌碼、訊號統計與部位紀錄。">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body data-page="home">
+<header class="nav" id="nav"></header>
+
+<main class="wrap">
+  <section class="hero" id="hero"></section>
+
+  <section class="sec">
+    <div class="sec-h"><h2>所有復盤</h2><p id="listCount"></p></div>
+    <div class="rlist" id="list"></div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><h2>加權指數走勢</h2><p>藍色方塊＝復盤日，點一下可開啟該週復盤</p></div>
+    <div class="card">
+      <div class="chart"><div class="chart-legend" id="legend"></div><div id="chart" style="position:absolute;inset:0"></div></div>
+      <div class="chart-note">收盤取自筆記中的籌碼表；有新聞報導的交易日使用報導中的精確收盤。</div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><h2>部位與訊號</h2><p>槓桿＝總部位 ÷ 本金</p></div>
+    <div class="card"><div class="timeline" id="timeline"></div></div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-h"><h2>籌碼總覽</h2><p>外資期貨、外資 BP、散戶多單（筆記籌碼表）</p></div>
+    <div id="chips"></div>
+  </section>
+
+  <footer>
+    本站為個人交易復盤，供群組內交流，不構成投資建議。<br>
+    資料來源：每週復盤 PDF（notes-pdf）中的看盤截圖與籌碼表；各週市場資訊另以新聞報導補充，連結列於各週頁面。籌碼數字由截圖判讀，個別數值可能有誤差。
+  </footer>
+</main>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
