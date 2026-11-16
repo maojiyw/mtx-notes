@@ -22,11 +22,12 @@ const dayOf = t => DAILY.find(d=>d.time===t);
 
 /* ---------- nav ---------- */
 function nav(activeId){
-  const shown = D.reviews.filter((r,i)=>i<4||r.id===activeId);
-  const links = [`<a href="${base}index.html" class="${activeId?'':'on'}">主頁</a>`,`<a href="${base}chips.html" class="${activeId==='chips'?'on':''}">每日籌碼</a>`]
-    .concat(shown.map(r=>`<a href="${reviewUrl(r)}" class="${activeId===r.id?'on':''}">${md(r.date)}</a>`))
-    .concat(D.reviews.length>shown.length?[`<a href="${base}index.html#list">全部 ${D.reviews.length} 篇</a>`]:[]);
-  $('#nav').innerHTML = `<div class="nav-in"><a class="brand" href="${base}index.html"><div class="brand-logo">MTX</div><span>復盤筆記</span></a><nav class="nav-links">${links.join('')}</nav></div>`;
+  const onChips = activeId==='chips';
+  $('#nav').innerHTML = `<div class="nav-in"><a class="brand" href="${base}index.html"><div class="brand-logo">MTX</div><span>復盤筆記</span></a>
+    <nav class="nav-tabs">
+      <a href="${base}index.html#list" class="tab-review${onChips?'':' on'}"><i class="ico">▤</i>每週復盤<span class="cnt">${D.reviews.length}</span></a>
+      <a href="${base}chips.html" class="tab-chips${onChips?' on':''}"><i class="live"></i>每日籌碼</a>
+    </nav></div>`;
 }
 
 /* ---------- charts ---------- */
@@ -111,6 +112,28 @@ const pointsHTML = items => `<ul class="points">${items.map(x=>typeof x==='strin
 /* =====================================================================
    主頁
    ===================================================================== */
+function dailyCard(el){
+  const S=window.MTXSheet; if(!S) return;
+  const head=el.querySelector('.feat-tag').outerHTML;
+  S.load().then(d=>{
+    const R=d.rows, L=R[R.length-1], sigs=sigList(L);
+    const lastStrong=[...R].reverse().find(r=>sigOn(r.sigStrong));
+    const cell=(k,v,sub,c='')=>`<div><span>${k}</span><b class="num ${c}">${v}</b>${sub?`<em>${sub}</em>`:''}</div>`;
+    el.innerHTML = head + `
+      <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）</div>
+      <div class="hero-price"><span class="px num ${cls(L.chg)}">${n2(L.idx)}</span><span class="ch num ${cls(L.chg)}">${sign(L.chg)}${n2(L.chg)}（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</span><span class="badge">加權指數收盤</span></div>
+      <div class="dgrid">
+        ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
+        ${cell('外資現貨',sign(L.fiSpot)+n2(L.fiSpot)+' 億','',cls(L.fiSpot))}
+        ${cell('外資 BP 金額',n0(L.bp),'BC '+n0(L.bc)+'・SC '+n0(L.sc))}
+        ${cell('散戶多單／空單',n0(L.rtLong)+'／'+n0(L.rtShort),'多單百分位 '+pctTxt(L.rtLongPct))}
+      </div>
+      <div class="sigs"><span class="sigs-h">今日訊號</span>${sigs.length?sigs.map(t=>`<span class="pill r">${t}</span>`).join(''):'<span class="pill">無落底訊號</span>'}${lastStrong?`<span class="sigs-last">最近強烈落底 <b class="num">${lastStrong.date.replace(/-/g,'/')}</b></span>`:''}</div>
+      <div class="ctas"><a class="cta amber" href="chips.html">看每日籌碼 →</a></div>`;
+  }).catch(()=>{
+    el.innerHTML = head + `<p style="color:var(--muted);margin-top:10px">暫時讀不到籌碼試算表，請稍後再試。</p><div class="ctas"><a class="cta amber" href="chips.html">前往每日籌碼 →</a></div>`;
+  });
+}
 function renderHome(){
   nav(null);
   const latest=D.reviews[0], last=DAILY[DAILY.length-1];
@@ -118,14 +141,17 @@ function renderHome(){
   const rec=(last.value-lo)/(peakIntra-lo)*100;
 
   $('#hero').innerHTML = `
-    <div class="card hero-main">
+    <div class="card hero-main feat feat-review">
+      <div class="feat-tag"><i class="ico">▤</i>每週復盤筆記<span>共 ${D.reviews.length} 篇</span></div>
       <div class="eyebrow">最新復盤・${latest.date.replace(/-/g,'/')}</div>
       <h1>${latest.title}</h1>
       <p>${latest.summary}</p>
       <div class="hero-price"><span class="px num ${cls(latest.chg)}">${fmt(latest.close)}</span><span class="ch num ${cls(latest.chg)}">${sign(latest.chg)}${fmt(latest.chg)}（${sign(latest.pct)}${latest.pct}%）</span><span class="badge">加權指數收盤</span></div>
-      <a class="cta" href="${reviewUrl(latest)}">閱讀本週復盤 →</a>
+      <div class="ctas"><a class="cta" href="${reviewUrl(latest)}">閱讀本週復盤 →</a><a class="cta ghost" href="#list">所有復盤</a></div>
     </div>
-    <div class="card"><div class="kpis">
+    <div class="card hero-main feat feat-chips" id="daily"><div class="feat-tag"><i class="live"></i>每日籌碼<span>每日更新</span></div><p class="loading">讀取試算表中…</p></div>`;
+  dailyCard($('#daily'));
+  $('#campaign').innerHTML = `<div class="card"><div class="kpis k6">
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
       <div class="kpi"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
