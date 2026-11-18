@@ -258,6 +258,32 @@ const n2 = v => v==null?'—':fmt(v,2);
 const sgn0 = v => v==null?'—':`<span class="${cls(v)}">${sign(v)}${fmt(v,0)}</span>`;
 const pctTxt = v => v==null?'—':v+'%';
 
+/* 明細表可選欄位：[key, 欄名, 格式, 群組, 預設顯示] */
+const COLS = [
+  ['idx','加權','n2','大盤',1],['chg','漲跌','c2','大盤',0],['pct','漲跌%','pct','大盤',1],['vol','成交量(億)','n0','大盤',0],
+  ['fiSpot','外資現貨(億)','c2','外資期貨',1],['fiOI','外資期貨<br>總未平倉','c0','外資期貨',0],['fiRel','外資期貨<br>相對結算','c0','外資期貨',1],['fiDelta','前日增減','c0','外資期貨',1],
+  ['bp','BP 金額','n0','外資選擇權',1],['sp','SP 金額','n0','外資選擇權',0],['bc','BC 金額','n0','外資選擇權',0],['sc','SC 金額','n0','外資選擇權',0],['bpsp','BP/SP<br>增幅比','r1','外資選擇權',0],['bcsc','BC/SC<br>增幅比','r1','外資選擇權',0],
+  ['rtLong','散戶多','n0','散戶',1],['rtShort','散戶空','n0','散戶',1],['rtLongPct','多單百分位','pp','散戶',1],['rtShortPct','空單百分位','pp','散戶',0],['mxLong','微台多','n0','散戶',0],['mxShort','微台空','n0','散戶',0],
+  ['sig','訊號','sig','訊號',1]
+];
+const COLS_KEY='mtx-cols-v1';
+const colsDefault = () => COLS.filter(c=>c[4]).map(c=>c[0]);
+function colsLoad(){ try{ const v=JSON.parse(localStorage.getItem(COLS_KEY)); if(Array.isArray(v)&&v.length) return v.filter(k=>COLS.some(c=>c[0]===k)); }catch(e){} return colsDefault(); }
+function colsSave(v){ try{ localStorage.setItem(COLS_KEY,JSON.stringify(v)); }catch(e){} }
+function cellHTML(r,[k,,f]){
+  const v=r[k];
+  switch(f){
+    case 'sig': return `<td class="sigcell">${sigList(r).join('、')}</td>`;
+    case 'pct': return `<td class="r num ${cls(v)}">${v==null?'—':sign(v)+v.toFixed(2)}</td>`;
+    case 'c0': return `<td class="r num ${cls(v)}">${n0(v)}</td>`;
+    case 'c2': return `<td class="r num ${cls(v)}">${n2(v)}</td>`;
+    case 'n2': return `<td class="r num">${n2(v)}</td>`;
+    case 'pp': return `<td class="r num">${pctTxt(v)}</td>`;
+    case 'r1': return `<td class="r num">${v==null?'—':v.toFixed(1)+'%'}</td>`;
+    default:   return `<td class="r num">${n0(v)}</td>`;
+  }
+}
+
 function renderChips(){
   nav('chips');
   const main=$('#main');
@@ -267,7 +293,8 @@ function renderChips(){
     const sigs=sigList(L);
     const delta=k=>L[k]!=null&&P[k]!=null?L[k]-P[k]:null;
     const kpi=(label,val,sub)=>`<div class="kpi"><span>${label}</span><b class="num">${val}</b><em>${sub}</em></div>`;
-    const ranges=[['3M',63],['6M',126],['1Y',250],['3Y',750],['全部',0]];
+    const ranges=[['1M',21],['3M',63],['6M',126],['1Y',250],['3Y',750],['全部',0]];
+    const first=R[0].date, last=L.date;
     const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空','多單紅・空單綠（口）']];
     main.innerHTML = `
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>每日籌碼</span></div>
@@ -291,28 +318,67 @@ function renderChips(){
       </div></div>
 
       <section class="sec">
-        <div class="sec-h"><h2>籌碼走勢</h2><div class="tabs" id="range">${ranges.map(([t,n],i)=>`<button data-n="${n}" class="${i===1?'on':''}">${t}</button>`).join('')}</div></div>
+        <div class="sec-h"><h2>籌碼走勢</h2><p>日期區間同時套用到走勢圖與下方明細</p></div>
+        <div class="card rangebar">
+          <div class="tabs" id="range">${ranges.map(([t,n])=>`<button data-n="${n}">${t}</button>`).join('')}</div>
+          <div class="dates"><label><span>起</span><input type="date" id="dFrom" min="${first}" max="${last}"></label><i>–</i><label><span>迄</span><input type="date" id="dTo" min="${first}" max="${last}"></label></div>
+          <span class="rb-note num">可選 ${first.replace(/-/g,'/')} – ${last.replace(/-/g,'/')}</span>
+        </div>
         <div class="stack">${panes.map(([h,sub],i)=>`
           <div class="card"><div class="card-h"><span>${h}</span> <span class="sub">${sub}</span></div><div class="chart tall"><div class="chart-legend num" id="lg${i}"></div><div id="ch${i}" style="position:absolute;inset:0"></div></div></div>`).join('')}
         </div>
       </section>
 
       <section class="sec" id="tbl">
-        <div class="sec-h"><h2>近 30 個交易日</h2><p>最新在最上面・紅底＝有落底訊號</p></div>
-        <div class="card"><div class="tscroll"><table class="t daily">
-          <thead><tr><th>日期</th><th class="r">加權</th><th class="r">漲跌%</th><th class="r">外資現貨(億)</th><th class="r">外資期貨<br>相對結算</th><th class="r">前日增減</th><th class="r">BP 金額</th><th class="r">散戶多</th><th class="r">散戶空</th><th class="r">多單百分位</th><th>訊號</th></tr></thead>
-          <tbody>${R.slice(-30).reverse().map(r=>{ const s=sigList(r); return `<tr${s.length?' class="sig"':''}>
-            <td class="num">${md(r.date)}</td><td class="r num">${n2(r.idx)}</td><td class="r num ${cls(r.pct)}">${r.pct==null?'—':sign(r.pct)+r.pct.toFixed(2)}</td>
-            <td class="r num ${cls(r.fiSpot)}">${n2(r.fiSpot)}</td><td class="r num ${cls(r.fiRel)}">${n0(r.fiRel)}</td><td class="r num ${cls(r.fiDelta)}">${n0(r.fiDelta)}</td>
-            <td class="r num">${n0(r.bp)}</td><td class="r num">${n0(r.rtLong)}</td><td class="r num">${n0(r.rtShort)}</td><td class="r num">${pctTxt(r.rtLongPct)}</td>
-            <td class="sigcell">${s.join('、')}</td></tr>`; }).join('')}</tbody></table></div></div>
+        <div class="sec-h"><h2>每日明細</h2>
+          <details class="colpick" id="colpick"><summary>顯示欄位</summary><div class="cp-body">
+            ${[...new Set(COLS.map(c=>c[3]))].map(g=>`<div class="cp-g"><b>${g}</b>${COLS.filter(c=>c[3]===g).map(c=>`<label><input type="checkbox" value="${c[0]}">${c[1].replace('<br>','')}</label>`).join('')}</div>`).join('')}
+            <div class="cp-act"><button type="button" data-act="all">全選</button><button type="button" data-act="def">恢復預設</button></div>
+          </div></details>
+        </div>
+        <p class="tbl-sub" id="tblSub"></p>
+        <div class="card"><div class="tscroll tall"><table class="t daily" id="dtable"></table></div></div>
         ${data.missing.length?`<p class="chart-note">試算表中找不到這些欄位：${data.missing.join('、')}</p>`:''}
       </section>`;
 
+    /* ---- 明細表 + 日期區間 ---- */
+    let cols=colsLoad(), range=[R[Math.max(0,R.length-126)].date,last];
+    const dFrom=$('#dFrom'), dTo=$('#dTo');
+    const drawTable=()=>{
+      const C=COLS.filter(c=>cols.includes(c[0])), rows=R.filter(r=>r.date>=range[0]&&r.date<=range[1]).reverse();
+      const yr=range[0].slice(0,4)!==range[1].slice(0,4);
+      const dt=d=>yr?d.replace(/-/g,'/'):md(d);
+      $('#dtable').innerHTML=`<thead><tr><th>日期</th>${C.map(c=>`<th class="${c[2]==='sig'?'':'r'}">${c[1]}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(r=>`<tr${sigList(r).length?' class="sig"':''}><td class="num">${dt(r.date)}</td>${C.map(c=>cellHTML(r,c)).join('')}</tr>`).join('')}</tbody>`;
+      const ns=rows.filter(r=>sigList(r).length).length;
+      $('#tblSub').innerHTML=`${range[0].replace(/-/g,'/')} – ${range[1].replace(/-/g,'/')}・<b class="num">${rows.length}</b> 個交易日・有訊號 <b class="num">${ns}</b> 天・最新在最上面・紅底＝有落底訊號`;
+    };
+    const syncChecks=()=>$('#colpick').querySelectorAll('input').forEach(x=>{ x.checked=cols.includes(x.value); });
+    $('#colpick').addEventListener('change',e=>{ if(e.target.type!=='checkbox') return;
+      cols=[...$('#colpick').querySelectorAll('input:checked')].map(x=>x.value); colsSave(cols); drawTable(); });
+    $('#colpick').addEventListener('click',e=>{ const a=e.target.dataset&&e.target.dataset.act; if(!a) return;
+      cols=a==='all'?COLS.map(c=>c[0]):colsDefault(); colsSave(cols); syncChecks(); drawTable(); });
+    syncChecks();
+
+    const charts=[], legends=[];
+    const clamp=d=>d<first?first:d>last?last:d;
+    const applyRange=(from,to,preset)=>{
+      from=clamp(from||first); to=clamp(to||last); if(from>to) [from,to]=[to,from];
+      range=[from,to]; dFrom.value=from; dTo.value=to;
+      [...$('#range').children].forEach(b=>b.classList.toggle('on',b.dataset.n===String(preset)));
+      charts.forEach(ch=>ch.timeScale().setVisibleRange({from,to}));
+      legends.forEach(f=>f());
+      drawTable();
+    };
+    const byN=n=>applyRange(n?R[Math.max(0,R.length-n)].date:first,last,n);
+    $('#range').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) byN(+b.dataset.n); });
+    [dFrom,dTo].forEach(x=>x.addEventListener('change',()=>{ if(x.value) applyRange(dFrom.value,dTo.value,null); }));
+
     glossary(main);
-    if(!window.LightweightCharts) return;
-    const T=r=>r.date, byDate=new Map(R.map(r=>[r.date,r])), charts=[];
-    const legend=(i,fn,c)=>{ const el=$('#lg'+i); const show=t=>{ const r=byDate.get(t)||L; el.innerHTML=`<b>${r.date.replace(/-/g,'/')}</b> `+fn(r); }; show(L.date); c.subscribeCrosshairMove(p=>show(p&&p.time)); };
+    if(!window.LightweightCharts){ byN(126); return; }
+    const T=r=>r.date, byDate=new Map(R.map(r=>[r.date,r]));
+    const endRow=()=>{ for(let i=R.length-1;i>=0;i--) if(R[i].date<=range[1]) return R[i]; return L; };
+    const legend=(i,fn,c)=>{ const el=$('#lg'+i); const show=t=>{ const r=byDate.get(t)||endRow(); el.innerHTML=`<b>${r.date.replace(/-/g,'/')}</b> `+fn(r); }; show(); c.subscribeCrosshairMove(p=>show(p&&p.time)); legends.push(show); };
     const mk=i=>{ const c=baseChart($('#ch'+i)); charts.push(c); return c; };
     const lines=(c,defs)=>defs.forEach(([k,col])=>{ const x=c.addLineSeries({color:col,lineWidth:2,priceFormat:{type:'volume'},lastValueVisible:false,priceLineVisible:false}); x.setData(R.filter(r=>r[k]!=null).map(r=>({time:T(r),value:r[k]}))); });
 
@@ -335,9 +401,7 @@ function renderChips(){
     c=mk(3); lines(c,[['rtShort','#10B981'],['rtLong','#EF4444']]);
     legend(3,r=>`多 <b class="up">${n0(r.rtLong)}</b> 空 <b class="down">${n0(r.rtShort)}</b> 多單百分位 ${pctTxt(r.rtLongPct)}`,c);
 
-    const setRange=n=>{ const from=n?R[Math.max(0,R.length-n)].date:R[0].date; charts.forEach(ch=>ch.timeScale().setVisibleRange({from,to:L.date})); };
-    setRange(126);
-    $('#range').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; [...$('#range').children].forEach(x=>x.classList.toggle('on',x===b)); setRange(+b.dataset.n); });
+    byN(126);
   }).catch(err=>{
     main.innerHTML=`<div class="card r-head"><h1>每日籌碼</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
   });
@@ -507,7 +571,7 @@ function glossary(root){
   }));
   pats.sort((a,b)=>b.n.length-a.n.length);
   const re=new RegExp(pats.map(x=>x.p).join('|'),'g');
-  const SKIP='a,script,style,.term,.chart,.chart-legend,.toc,.nav,.num,button';
+  const SKIP='a,script,style,.term,.chart,.chart-legend,.toc,.nav,.num,button,.colpick,#dtable';
   const seen=new WeakMap();
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>
     n.nodeValue.trim()&&!n.parentElement.closest(SKIP)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
