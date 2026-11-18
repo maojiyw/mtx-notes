@@ -30,7 +30,8 @@ function nav(activeId){
       <a href="${base}chips.html" class="tab-chips${onChips?' on':''}"><i class="live"></i>每日籌碼</a>
       <a href="${base}signals.html" class="tab-signals${onSignals?' on':''}" aria-label="訊號回測"><i class="ico">◎</i><span class="lbl">訊號回測</span></a>
       <a href="${base}topics.html" class="tab-search${onTopics?' on':''}" aria-label="搜尋與主題"><i class="ico">⌕</i><span class="lbl">搜尋</span></a>
-    </nav></div>`;
+    </nav>${document.body.dataset.page==='home'?`<button type="button" class="theme-btn" id="themeBtn"></button>`:''}</div>`;
+  initThemeBtn();
   liveTicker();
 }
 
@@ -81,16 +82,45 @@ function liveTicker(){
 }
 
 /* ---------- charts ---------- */
+const THEMES = {
+  light:{bg:'#FFFFFF',text:'#64748B',grid:'rgba(226,232,240,.9)',border:'#E2E8F0',cross:'#94A3B8',label:'#475569'},
+  dark:{bg:'#151A23',text:'#8A94A7',grid:'rgba(35,43,58,.6)',border:'#232B3A',cross:'#5D677B',label:'#2E3850'}
+};
+const isLight = ()=>document.body.classList.contains('light');
+let CH = isLight()?THEMES.light:THEMES.dark;
+const ALL_CHARTS = [];
+function chartTheme(){
+  return {layout:{background:{type:'solid',color:CH.bg},textColor:CH.text},
+    grid:{horzLines:{color:CH.grid}},
+    rightPriceScale:{borderColor:CH.border},leftPriceScale:{borderColor:CH.border},timeScale:{borderColor:CH.border},
+    crosshair:{vertLine:{color:CH.cross,labelBackgroundColor:CH.label},horzLine:{color:CH.cross,labelBackgroundColor:CH.label}}};
+}
+function setTheme(mode){
+  document.body.classList.toggle('light',mode==='light');
+  try{ localStorage.setItem('mtx-theme',mode); }catch(e){}
+  CH = THEMES[mode];
+  ALL_CHARTS.forEach(c=>{ try{ c.applyOptions(chartTheme()); }catch(e){} });
+  initThemeBtn();
+}
+function initThemeBtn(){
+  const b=document.getElementById('themeBtn'); if(!b) return;
+  const light=isLight();
+  b.innerHTML = light?'<i class="ico">☾</i><span class="lbl">深色</span>':'<i class="ico">☀</i><span class="lbl">淺色</span>';
+  b.title = b.ariaLabel = light?'切換成黑底':'切換成白底';
+  b.onclick = ()=>setTheme(isLight()?'dark':'light');
+}
 function baseChart(el,extra){
-  return LightweightCharts.createChart(el,Object.assign({
+  if(extra){ ['leftPriceScale','rightPriceScale','timeScale'].forEach(k=>{ if(extra[k]&&extra[k].borderColor) extra[k].borderColor=CH.border; }); }
+  const chart = LightweightCharts.createChart(el,Object.assign({
     autoSize:true,
-    layout:{background:{type:'solid',color:'#151A23'},textColor:'#8A94A7',fontSize:11,fontFamily:"'JetBrains Mono',monospace"},
-    grid:{vertLines:{visible:false},horzLines:{color:'rgba(35,43,58,.6)'}},
-    rightPriceScale:{borderColor:'#232B3A'},
-    timeScale:{borderColor:'#232B3A',fixLeftEdge:true,fixRightEdge:true},
-    crosshair:{mode:LightweightCharts.CrosshairMode.Magnet,vertLine:{color:'#5D677B',labelBackgroundColor:'#2E3850'},horzLine:{color:'#5D677B',labelBackgroundColor:'#2E3850'}},
+    layout:{background:{type:'solid',color:CH.bg},textColor:CH.text,fontSize:11,fontFamily:"'JetBrains Mono',monospace"},
+    grid:{vertLines:{visible:false},horzLines:{color:CH.grid}},
+    rightPriceScale:{borderColor:CH.border},
+    timeScale:{borderColor:CH.border,fixLeftEdge:true,fixRightEdge:true},
+    crosshair:{mode:LightweightCharts.CrosshairMode.Magnet,vertLine:{color:CH.cross,labelBackgroundColor:CH.label},horzLine:{color:CH.cross,labelBackgroundColor:CH.label}},
     handleScroll:false,handleScale:false,localization:{locale:'zh-TW'}
   },extra||{}));
+  ALL_CHARTS.push(chart); return chart;
 }
 function indexChart(el,legendEl,{markers=[],highlight=null,clickable=false}={}){
   if(!window.LightweightCharts){ el.innerHTML='<p style="padding:20px;color:#8A94A7">圖表載入失敗（需要網路連線）</p>'; return; }
