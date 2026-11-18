@@ -8,7 +8,7 @@ window.MTXSheet = (function(){
   'use strict';
   const ID = '1J-vhV9ahpiZejIJ0pz565KBiptDfxJX3';
   const url = sheet => `https://docs.google.com/spreadsheets/d/${ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`;
-  const CACHE_KEY = 'mtx-sheet-v1', CACHE_MS = 10*60*1000;
+  const CACHE_KEY = 'mtx-sheet-v2', CACHE_MS = 10*60*1000;
 
   // 欄名（去掉空白後比對：先完全相同，再比對結尾）
   const MAIN = {
@@ -61,9 +61,18 @@ window.MTXSheet = (function(){
       Object.assign(o, opt.get(d)||{});
       rows.push(o);
     }
+    // 資料檢查：日期重複、沒有排序、2019 年後的週末日期（2012～2018 的週六是補班日，不算錯）
+    const warnings=[];
+    for(let i=1;i<rows.length;i++){
+      if(rows[i].date===rows[i-1].date) warnings.push(`日期重複：${rows[i].date}`);
+      else if(rows[i].date<rows[i-1].date) warnings.push(`日期沒有排序：${rows[i-1].date} 之後是 ${rows[i].date}`);
+    }
     rows.sort((a,b)=>a.date<b.date?-1:1);
+    rows.forEach(r=>{ const wd=new Date(r.date+'T00:00:00Z').getUTCDay(); if(r.date>='2019-01-01'&&(wd===0||wd===6)) warnings.push(`週末日期（可能打錯）：${r.date}`); });
+    // Sheet1 的外資 BP 金額序列（BP 紅燈逐日排名用，只取有數值的日子）
+    const bpSeries=[...opt.entries()].filter(([,o])=>o.bp!=null).map(([date,o])=>({date,bp:o.bp})).sort((a,b)=>a.date<b.date?-1:1);
     const missing=[...Object.entries(ca),...Object.entries(cb)].filter(([,i])=>i<0).map(([k])=>MAIN[k]||OPT[k]);
-    return {rows, missing, fetchedAt:Date.now()};
+    return {rows, bpSeries, warnings, missing, fetchedAt:Date.now()};
   }
 
   let pending=null;

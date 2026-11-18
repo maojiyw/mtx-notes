@@ -10,6 +10,7 @@ const sign = v => v>0?'+':'';
 const md = s => s.slice(5).replace('-','/');
 const WD = ['日','一','二','三','四','五','六'];
 const weekday = s => '週'+WD[new Date(s+'T00:00:00Z').getUTCDay()];
+const dayNumOf = s => Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10))/864e5;   // 日期 → 日曆天序號（天數一律用日曆天相減）
 
 const page = document.body.dataset.page;
 const base = page==='review' ? '../' : '';
@@ -22,11 +23,12 @@ const dayOf = t => DAILY.find(d=>d.time===t);
 
 /* ---------- nav ---------- */
 function nav(activeId){
-  const onChips = activeId==='chips', onTopics = activeId==='topics';
+  const onChips = activeId==='chips', onTopics = activeId==='topics', onSignals = activeId==='signals';
   $('#nav').innerHTML = `<div class="nav-in"><a class="brand" href="${base}index.html"><div class="brand-logo">MTX</div><span>復盤筆記</span></a>
     <nav class="nav-tabs">
-      <a href="${base}index.html#list" class="tab-review${onChips||onTopics?'':' on'}"><i class="ico">▤</i>每週復盤<span class="cnt">${D.reviews.length}</span></a>
+      <a href="${base}index.html#list" class="tab-review${onChips||onTopics||onSignals?'':' on'}"><i class="ico">▤</i>每週復盤<span class="cnt">${D.reviews.length}</span></a>
       <a href="${base}chips.html" class="tab-chips${onChips?' on':''}"><i class="live"></i>每日籌碼</a>
+      <a href="${base}signals.html" class="tab-signals${onSignals?' on':''}" aria-label="訊號回測"><i class="ico">◎</i><span class="lbl">訊號回測</span></a>
       <a href="${base}topics.html" class="tab-search${onTopics?' on':''}" aria-label="搜尋與主題"><i class="ico">⌕</i><span class="lbl">搜尋</span></a>
     </nav></div>`;
   liveTicker();
@@ -109,9 +111,10 @@ function indexChart(el,legendEl,{markers=[],highlight=null,clickable=false}={}){
   if(clickable) ch.subscribeClick(p=>{ if(!p||!p.time) return; const r=D.reviews.find(r=>r.date===p.time); if(r) location.href=reviewUrl(r); });
   return ch;
 }
-function chipCharts(ids,C,{end=null,n=60}={}){
+function chipCharts(ids,C,{end=null,days=90}={}){
   if(!window.LightweightCharts) return;
-  let idx=C.dates.map((d,i)=>i).filter(i=>!end||C.dates[i]<=end); idx=idx.slice(-n);
+  let idx=C.dates.map((d,i)=>i).filter(i=>!end||C.dates[i]<=end);
+  if(idx.length){ const t1=dayNumOf(C.dates[idx[idx.length-1]]); idx=idx.filter(i=>dayNumOf(C.dates[i])>t1-days); }   // 近 N 個日曆天
   const pick=(arr)=>idx.map(i=>({time:C.dates[i],v:arr[i]})).filter(x=>x.v!=null);
   const empty=(id,arr)=>{ if(pick(arr).length) return false; $(id).innerHTML='<p class="mini-empty">此期間沒有這項籌碼資料</p>'; return true; };
   ids.forEach(id=>$(id).innerHTML='');
@@ -123,7 +126,7 @@ function chipCharts(ids,C,{end=null,n=60}={}){
   if(!empty(ids[1],C.fiBP)){
     const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
     h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
-    h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'紅燈'}); c2.timeScale().fitContent();
+    h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'}); c2.timeScale().fitContent();
   }
   if(!empty(ids[2],C.rtLong)){
     const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
@@ -226,7 +229,7 @@ function renderHome(){
 
   $('#timeline').innerHTML = D.campaign.timeline.map(x=>`<div class="tl" style="--c:${x.c}"><b>${x.d}</b><em>${x.v}</em><span>${x.t}</span></div>`).join('');
   $('#chips').innerHTML = chipCardsHTML('hc');
-  withChips(['#hc1','#hc2','#hc3'],{n:60},$('#chipsNote'));
+  withChips(['#hc1','#hc2','#hc3'],{days:90},$('#chipsNote'));
 }
 
 /* =====================================================================
@@ -276,7 +279,7 @@ function renderReview(id){
 
   const market = `
     <section class="sec" id="chips">
-      <div class="sec-h"><h2>籌碼圖</h2><p>本週為止的近 60 個交易日・<span id="chipsNote">讀取中</span>・<a href="../chips.html">看每日籌碼 →</a></p></div>
+      <div class="sec-h"><h2>籌碼圖</h2><p>本週為止的近 3 個月（90 天）・<span id="chipsNote">讀取中</span>・<a href="../chips.html">看每日籌碼 →</a></p></div>
       ${chipCardsHTML('rc')}
     </section>
     <section class="sec" id="market">
@@ -295,7 +298,7 @@ function renderReview(id){
   $('#main').innerHTML = head + body + market;
   const marks = D.campaign.events.filter(e=>e.time<=r.week[1]);
   indexChart($('#chart'),$('#legend'),{markers:marks,highlight:r.week});
-  withChips(['#rc1','#rc2','#rc3'],{end:r.week[1],n:60},$('#chipsNote'));
+  withChips(['#rc1','#rc2','#rc3'],{end:r.week[1],days:90},$('#chipsNote'));
 }
 
 /* =====================================================================
@@ -344,7 +347,8 @@ function renderChips(){
     const sigs=sigList(L);
     const delta=k=>L[k]!=null&&P[k]!=null?L[k]-P[k]:null;
     const kpi=(label,val,sub)=>`<div class="kpi"><span>${label}</span><b class="num">${val}</b><em>${sub}</em></div>`;
-    const ranges=[['1M',21],['3M',63],['6M',126],['1Y',250],['3Y',750],['全部',0]];
+    const ranges=[['1M',30],['3M',91],['6M',182],['1Y',365],['3Y',1095],['全部',0]];   // 日曆天
+    const back=n=>new Date((dayNumOf(L.date)-n)*864e5).toISOString().slice(0,10);
     const first=R[0].date, last=L.date;
     const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空','多單紅・空單綠（口）']];
     main.innerHTML = `
@@ -359,7 +363,7 @@ function renderChips(){
           <div><span>外資現貨</span><b class="${cls(L.fiSpot)}">${sign(L.fiSpot)}${n2(L.fiSpot)} 億</b></div>
         </div>
         <div class="sigs"><span class="sigs-h">今日訊號</span>${sigs.length?sigs.map(t=>`<span class="pill r">${t}</span>`).join(''):'<span class="pill">無落底訊號</span>'}
-          ${lastStrong?`<span class="sigs-last">最近一次強烈落底：<b class="num">${lastStrong.date.replace(/-/g,'/')}</b></span>`:''}</div>
+          ${lastStrong?`<span class="sigs-last">最近一次強烈落底：<b class="num">${lastStrong.date.replace(/-/g,'/')}</b>・<a href="signals.html#strong" style="color:#93C5FD">看訊號回測 →</a></span>`:''}</div>
       </div>
       <div class="card" style="margin-top:12px"><div class="kpis k4">
         ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`前日增減 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
@@ -393,7 +397,7 @@ function renderChips(){
       </section>`;
 
     /* ---- 明細表 + 日期區間 ---- */
-    let cols=colsLoad(), range=[R[Math.max(0,R.length-126)].date,last];
+    let cols=colsLoad(), range=[back(182),last];
     const dFrom=$('#dFrom'), dTo=$('#dTo');
     const drawTable=()=>{
       const C=COLS.filter(c=>cols.includes(c[0])), rows=R.filter(r=>r.date>=range[0]&&r.date<=range[1]).reverse();
@@ -421,12 +425,12 @@ function renderChips(){
       legends.forEach(f=>f());
       drawTable();
     };
-    const byN=n=>applyRange(n?R[Math.max(0,R.length-n)].date:first,last,n);
+    const byN=n=>applyRange(n?back(n):first,last,n);
     $('#range').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) byN(+b.dataset.n); });
     [dFrom,dTo].forEach(x=>x.addEventListener('change',()=>{ if(x.value) applyRange(dFrom.value,dTo.value,null); }));
 
     glossary(main);
-    if(!window.LightweightCharts){ byN(126); return; }
+    if(!window.LightweightCharts){ byN(182); return; }
     const T=r=>r.date, byDate=new Map(R.map(r=>[r.date,r]));
     const endRow=()=>{ for(let i=R.length-1;i>=0;i--) if(R[i].date<=range[1]) return R[i]; return L; };
     const legend=(i,fn,c)=>{ const el=$('#lg'+i); const show=t=>{ const r=byDate.get(t)||endRow(); el.innerHTML=`<b>${r.date.replace(/-/g,'/')}</b> `+fn(r); }; show(); c.subscribeCrosshairMove(p=>show(p&&p.time)); legends.push(show); };
@@ -452,12 +456,287 @@ function renderChips(){
     c=mk(3); lines(c,[['rtShort','#10B981'],['rtLong','#EF4444']]);
     legend(3,r=>`多 <b class="up">${n0(r.rtLong)}</b> 空 <b class="down">${n0(r.rtShort)}</b> 多單百分位 ${pctTxt(r.rtLongPct)}`,c);
 
-    byN(126);
+    byN(182);
   }).catch(err=>{
     main.innerHTML=`<div class="card r-head"><h1>每日籌碼</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
   });
 }
 
+/* =====================================================================
+   訊號回測頁（讀每日籌碼試算表，在瀏覽器裡計算；引擎在 backtest.js）
+   ===================================================================== */
+const PEND = /^(未達成|未突破|未站回|未確認|未再跌破)/;
+function btFmt(v,f){
+  if(v===null||v===undefined||v==='') return '—';
+  if(typeof v!=='number') return String(v);
+  if(f==='pct') return (v>0?'+':'')+v.toFixed(2)+'%';
+  if(f==='pct0') return v.toFixed(2)+'%';
+  if(f==='num') return fmt(v,2);
+  return String(v);
+}
+const btTone = (v,color) => typeof v==='number' ? (color?cls(v):'') : (typeof v==='string'&&PEND.test(v)?'pend':'');
+// 欄位：[資料欄, 表頭, 格式, 選項]；選項 c＝正負上色、t＝文字靠左
+const BT_COLS = {
+  excess:[['持有週期','持有週期'],['訊號樣本數','訊號樣本數'],['訊號勝率','訊號勝率','pct0'],['基準勝率','基準勝率','pct0'],['超額勝率','超額勝率','pct','c'],['訊號期望值','訊號期望值','pct'],['基準期望值','基準期望值','pct'],['超額期望值','超額期望值','pct','c']],
+  events:[['首日日期','首日日期'],['首日收盤','首日收盤','num'],['30日最低跌幅','30日內最低跌幅','pct'],['30日最低日期','30日最低日期'],['30日最低收盤','30日最低收盤','num'],['到達30日最低(天)','到達最低(天)'],
+    ['站回首日日期','站回首日日期'],['站回首日費時','自最低站回首日(天)'],['再跌破首日日期','再跌破首日日期'],['再跌破首日費時','站回後再跌破(天)'],
+    ['波段低點跌幅','波段低點跌幅','pct'],['波段低點日期','波段低點日期'],['波段低點收盤','波段低點收盤','num'],['到達波段低點(天)','到達波段低點(天)'],['波段低點確認日','波段低點確認日'],
+    ['前高日期','前高日期'],['前高收盤','前高收盤','num'],['突破日期','突破前高日期'],['突破前高費時','突破前高費時(天)'],['盤勢','盤勢','','t']],
+  summary:[['評估基準','評估基準','','t'],['持有週期','持有週期'],['樣本數','樣本數'],['未完成','未完成'],['勝率','勝率','pct0'],['期望值','期望值','pct'],['平均獲利W','平均獲利W','pct'],['平均虧損L','平均虧損L','pct'],['盈虧比','盈虧比','num'],
+    ['報酬標準差','報酬標準差','pct0'],['最差10%報酬','最差10%報酬','pct'],['最大單次漲幅','最大單次漲幅','pct'],['最大單次跌幅','最大單次跌幅','pct'],['平均最大漲幅','平均最大漲幅','pct'],['中位數最大漲幅','中位數最大漲幅','pct'],['平均最大跌幅','平均最大跌幅','pct'],['中位數最大跌幅','中位數最大跌幅','pct']],
+  pullbacks:[['突破日期','突破日期'],['對應訊號','對應訊號','','t'],['突破收盤','突破收盤','num'],
+    ...[5,10,15,20].flatMap(p=>[[`回檔>${p}%日期`,`回檔&gt;${p}%日期`],[`回檔>${p}%費時`,`${p}%費時(天)`],[`回檔>${p}%基準高點`,`${p}%基準高點`]])],
+  byYear:[['年度','年度'],['年度漲跌','全年漲跌','pct','c'],['訊號數','訊號數'],['30天勝率','30天勝率','pct0'],['30天期望值','30天期望值','pct','c'],['30天基準期望值','30天基準','pct'],['30天超額','30天超額','pct','c'],
+    ['60天勝率','60天勝率','pct0'],['60天期望值','60天期望值','pct','c'],['60天基準期望值','60天基準','pct'],['60天超額','60天超額','pct','c']],
+  byRegime:[['組別','組別','','t'],['分類方式','分類方式','','t'],['訊號數','訊號數'],['30天勝率','30天勝率','pct0'],['30天期望值','30天期望值','pct','c'],['30天基準期望值','30天基準','pct'],['30天超額','30天超額','pct','c'],
+    ['60天勝率','60天勝率','pct0'],['60天期望值','60天期望值','pct','c'],['60天基準期望值','60天基準','pct'],['60天超額','60天超額','pct','c']]
+};
+function btTable(key,rows,{rowId,group}={}){
+  const C=BT_COLS[key]; let prev=null;
+  const body=rows.map(r=>{
+    const k=[];
+    if(key==='summary'){ const b=r['評估基準']; if(b.startsWith('無條件')) k.push('base'); if(b.includes('參考用')) k.push('ref'); }
+    if(group){ const g=r[group]; if(prev!==null&&g!==prev) k.push('grp'); prev=g; }
+    const id=rowId?` id="${rowId(r)}"`:'';
+    return `<tr${id}${k.length?` class="${k.join(' ')}"`:''}>${C.map(([f,,fm,o])=>{ const v=r[f], t=btTone(v,o==='c');
+      return `<td class="${o==='t'?'tx':'r'}${t?' '+t:''}">${btFmt(v,fm)}</td>`; }).join('')}</tr>`;
+  }).join('');
+  return `<div class="bt-scroll noterm"><table class="t bt"><thead><tr>${C.map(([,h,,o])=>`<th class="${o==='t'?'tx':'r'}">${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+const btPick = (rows,cond) => rows.find(r=>Object.entries(cond).every(([k,v])=>r[k]===v))||{};
+const bv = (v,f,color) => { const t=btTone(v,color); return `<b class="num${t?' '+t:''}">${btFmt(v,f)}</b>`; };
+
+// 期望值長條圖（訊號 vs 無條件基準）
+function evChart(el,rows,color){
+  const draw=()=>{
+    const W=Math.max(260,el.clientWidth), H=230, m={t:22,r:8,b:28,l:44};
+    const S=[['訊號期望值','訊號',color],['基準期望值','無條件基準','#5D677B']];
+    const vals=rows.flatMap(r=>S.map(s=>r[s[0]]));
+    const lo=Math.min(0,...vals), hi=Math.max(0,...vals)*1.15||1;
+    const y=v=>m.t+(hi-v)/(hi-lo)*(H-m.t-m.b);
+    const gw=(W-m.l-m.r)/rows.length, bw=Math.min(34,gw*.32);
+    const ticks=[]; const step=Math.pow(10,Math.floor(Math.log10((hi-lo)/4||1))); const st=[1,2,5,10].map(x=>x*step).find(x=>(hi-lo)/x<=5)||step*10;
+    for(let v=Math.ceil(lo/st)*st;v<=hi+1e-9;v+=st) ticks.push(+v.toFixed(6));
+    let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="各持有週期訊號與無條件基準的期望值">`;
+    ticks.forEach(v=>{ svg+=`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${v===0?'#3A4560':'rgba(35,43,58,.7)'}"/><text x="${m.l-6}" y="${y(v)+4}" text-anchor="end" class="bt-ax">${v}%</text>`; });
+    rows.forEach((r,i)=>{ const cx=m.l+gw*i+gw/2;
+      S.forEach(([k,lab,col],j)=>{ const v=r[k]; if(v==null) return; const x=cx+(j?2:-bw-2), y0=y(Math.max(0,v)), h=Math.max(1,Math.abs(y(v)-y(0)));
+        svg+=`<rect x="${x}" y="${y0}" width="${bw}" height="${h}" rx="2" fill="${col}" data-tip="${r['持有週期']}｜${lab}期望值 ${btFmt(v,'pct')}${j?'':'（樣本 '+r['訊號樣本數']+'）'}"/>`;
+        svg+=`<text x="${x+bw/2}" y="${v>=0?y0-5:y0+h+12}" text-anchor="middle" class="bt-val">${btFmt(v,'pct')}</text>`; });
+      svg+=`<text x="${cx}" y="${H-8}" text-anchor="middle" class="bt-ax">${r['持有週期']}</text>`; });
+    el.innerHTML=svg+'</svg><div class="bt-tip"></div>';
+  };
+  draw();
+  const tip=()=>el.querySelector('.bt-tip');
+  const show=e=>{ const t=e.target.closest('rect[data-tip]'); const tp=tip(); if(!t){ tp.classList.remove('on'); return; }
+    tp.textContent=t.dataset.tip; tp.classList.add('on'); const b=el.getBoundingClientRect();
+    let x=e.clientX-b.left+10; if(x+tp.offsetWidth>b.width) x=b.width-tp.offsetWidth; tp.style.left=Math.max(0,x)+'px'; tp.style.top=Math.max(0,e.clientY-b.top-36)+'px'; };
+  el.addEventListener('pointermove',show); el.addEventListener('pointerdown',show); el.addEventListener('pointerleave',()=>tip().classList.remove('on'));
+  if(window.ResizeObserver){ let w=el.clientWidth; new ResizeObserver(()=>{ if(el.clientWidth!==w){ w=el.clientWidth; draw(); } }).observe(el); }
+}
+
+const SIG_COLOR = {strong:'#EF4444', bp:'#A855F7'};
+function renderSignals(){
+  nav('signals');
+  const main=$('#main'), B=window.MTXBacktest;
+  const end=(new URLSearchParams(location.search).get('end')||'').match(/^\d{4}-\d{2}-\d{2}$/)?new URLSearchParams(location.search).get('end'):null;
+  window.MTXSheet.load().then(data=>{
+    const res=B.run(data,end), mk=res.mk, LAST=mk.n-1;
+    window.__bt=res;   // 方便在主控台驗算
+    const dt=s=>s.replace(/-/g,'/');
+    const warn=(data.warnings||[]).slice(0,8);
+
+    const lead=s=>{
+      const ex=r=>btPick(s.excess,{'持有週期':r});
+      if(s.id==='strong') return `計入 ${bv(s.count)} 筆訊號（原始 ${bv(s.raw)} 筆，冷卻期移除：${s.removed.length?s.removed.join('、'):'無'}）。
+        首日收盤進場持有 30 天，勝率 ${bv(ex('30天')['訊號勝率'],'pct0')}（所有交易日基準 ${bv(ex('30天')['基準勝率'],'pct0')}），
+        期望值 ${bv(ex('30天')['訊號期望值'],'pct')}（基準 ${bv(ex('30天')['基準期望值'],'pct')}），超額 ${bv(ex('30天')['超額期望值'],'pct',1)}。`;
+      // BP 紅燈：亮燈前 30 天（日曆天）內自高點的跌幅
+      const drops=s.idxs.map(i=>{ let hi=mk.c[i]; for(let t=i;t>=0&&mk.days(t,i)<=30;t--) hi=Math.max(hi,mk.c[t]); return (mk.c[i]/hi-1)*100; });
+      const latest=s.events[0], newest=latest&&mk.days(latest._i,LAST), dn=drops.map(x=>-x);
+      return `逐日動態判斷：當天的外資 BP 金額達到「當天以前所有資料」的前 2% 才算亮燈，連續亮燈只取第一天，熄燈滿 10 個交易日才算新的一次，從 2012 年起判斷。
+        共 ${bv(s.count)} 次，樣本少，屬於個案觀察。每次都在急跌中亮燈：亮燈前 30 天內，從高點跌了 ${bv(Math.min(...dn),'pct0')}～${bv(Math.max(...dn),'pct0')}。
+        ${latest?`最新一次是 <b class="num">${dt(latest['首日日期'])}</b>${newest<30?`，距資料最後一天只有 ${newest} 天，多數欄位還是「未達成」`:''}。`:''}
+        首日收盤進場持有 30 天，勝率 ${bv(ex('30天')['訊號勝率'],'pct0')}（基準 ${bv(ex('30天')['基準勝率'],'pct0')}），期望值 ${bv(ex('30天')['訊號期望值'],'pct')}（基準 ${bv(ex('30天')['基準期望值'],'pct')}）；
+        持有 60 天，勝率 ${bv(ex('60天')['訊號勝率'],'pct0')}，期望值 ${bv(ex('60天')['訊號期望值'],'pct')}（基準 ${bv(ex('60天')['基準期望值'],'pct')}）。`;
+    };
+    const robust=s=>{
+      if(s.id!=='strong') return '';
+      const g=(d,grp)=>btPick(s.byRegime,{'分類方式':d,'組別':grp});
+      const bear=g('全年漲跌（事後才知道）','空頭年（全年下跌）'), bull=g('全年漲跌（事後才知道）','強多頭（20%以上）');
+      const bad=s.byYear.filter(r=>r['30天超額']!=null&&r['30天超額']<=-0.5).sort((a,b)=>a['30天超額']-b['30天超額']).map(r=>r['年度']).sort();
+      const dd=['距高點 5% 以內','距高點 5～15%','距高點 15% 以上'].map(x=>bv(g('距歷史新高（訊號當天可判斷）',x)['30天超額'],'pct',1)).join('／');
+      return `<p class="bt-lead">空頭年（全年下跌）持有 30 天，訊號期望值 ${bv(bear['30天期望值'],'pct')}，同組基準 ${bv(bear['30天基準期望值'],'pct')}；強多頭年訊號 ${bv(bull['30天期望值'],'pct')}，基準 ${bv(bull['30天基準期望值'],'pct')}。
+        ${bear['30天超額']>0?'訊號<b>不是只有多頭年有用</b>：空頭年也贏過基準，只是絕對報酬接近零；':''}${bad.length?`明顯失靈（30 天超額 −0.5% 以下）的反而是 ${bad.join('、')} 這類一路上漲、拉回很淺的年份。`:''}
+        季線下、年線下的訊號 60 天勝率分別是 ${bv(g('季線（訊號當天可判斷）','季線下')['60天勝率'],'pct0')}、${bv(g('年線（訊號當天可判斷）','年線下')['60天勝率'],'pct0')}；
+        距歷史新高 5% 以內／5～15%／15% 以上的 30 天超額分別是 ${dd}。各組樣本只有個位數到二十幾筆，差距要保守看待。</p>`;
+    };
+    const status=s=>{
+      const e=s.events[0]; if(!e) return '';
+      const i=mk.idxOf.get(e['首日日期']), c0=mk.c[i], now=mk.c[LAST], age=mk.days(i,LAST);
+      let lo=i; for(let t=i;t<=LAST;t++) if(mk.c[t]<mk.c[lo]) lo=t;
+      const chg=(now/c0-1)*100, low=(mk.c[lo]/c0-1)*100;
+      const win=age<30?`還剩 ${30-age} 天`:'已滿';
+      return `<div class="card bt-status noterm"><div class="dgrid keys">
+        <div><span>最近一次訊號</span><b class="num">${dt(e['首日日期'])}</b><em>首日收盤 ${fmt(c0)}・距今 ${age} 天</em></div>
+        <div><span>首日收盤進場至今</span><b class="num ${cls(chg)}">${sign(chg)}${chg.toFixed(2)}%</b><em>${dt(mk.d[LAST])} 收 ${fmt(now)}</em></div>
+        <div><span>首日以來最低收盤</span><b class="num ${cls(low)}">${low<0?low.toFixed(2)+'%':'—'}</b><em>${lo===i?'最低就是首日':`${dt(mk.d[lo])}・${fmt(mk.c[lo])}`}</em></div>
+        <div><span>30 日觀察窗口</span><b class="num">${win}</b><em>${e['突破日期']==='未突破'?`未突破前高 ${fmt(e['前高收盤'])}`:`${dt(e['突破日期'])} 已突破`}</em></div>
+      </div></div>`;
+    };
+    const section=(s,k)=>`
+      <section id="${s.id}" data-sig="${s.id}"${k?' hidden':''}>
+        ${status(s)}
+        <p class="bt-lead">${lead(s)}</p>
+        <h2 class="bt-h2" id="${s.id}-history">訊號在歷史走勢上的位置</h2>
+        <p class="bt-note">箭頭＝計入的訊號首日。滑鼠滾輪放大縮小、按住拖曳左右移動（手機：兩指縮放、左右滑動），雙擊回到全部；點一下箭頭附近可跳到表一那一列。</p>
+        <div class="card"><div class="bt-chartbar">
+          <div class="tabs" data-preset="${s.id}">${[['1Y',365],['3Y',1095],['5Y',1826],['10Y',3652],['全部',0]].map(([t,n])=>`<button data-n="${n}"${n?'':' class="on"'}>${t}</button>`).join('')}</div>
+          <div class="bt-dates"><input type="date" data-from="${s.id}" aria-label="起始日期"><i>–</i><input type="date" data-to="${s.id}" aria-label="結束日期"></div>
+          <div class="tabs" data-scale="${s.id}"><button data-m="1" class="on">對數</button><button data-m="0">線性</button></div></div>
+          <p class="bt-range" id="${s.id}-rg"></p>
+          <div class="chart"><div class="chart-legend num" id="${s.id}-lg"></div><div class="bt-hist" id="${s.id}-hc" style="position:absolute;inset:0"></div></div></div>
+        <h2 class="bt-h2" id="${s.id}-chart">訊號 vs 無條件基準：各持有週期期望值</h2>
+        <p class="bt-note">首日收盤進場；基準＝所有交易日進場、持有相同天數的平均報酬。</p>
+        <div class="card bt-card"><div class="bt-legend"><span><i class="bt-sw" style="background:${SIG_COLOR[s.id]||'#3B82F6'}"></i>訊號</span><span><i class="bt-sw" style="background:#5D677B"></i>無條件基準</span></div><div class="bt-ev" id="${s.id}-ev"></div></div>
+        <h2 class="bt-h2" id="${s.id}-excess">超額表現</h2>
+        ${btTable('excess',s.excess)}
+        <p class="bt-note bt-after">相近的訊號會共用同一段漲勢（例如 2026 年的多筆強烈落底），樣本並非完全獨立，實際的可信度比樣本數看起來低。</p>
+        <h2 class="bt-h2" id="${s.id}-events">表一　訊號日期追蹤表</h2>
+        <p class="bt-note">「—」＝低點就是首日，不適用；「未達成(N天)」＝截至資料最後一天已經過 N 天仍未發生。站回／再跌破費時自前一事件起算。</p>
+        ${btTable('events',s.events,{rowId:r=>`ev-${s.id}-${r['首日日期']}`})}
+        <h2 class="bt-h2" id="${s.id}-summary">表二　多週期表現與極值統計摘要</h2>
+        <p class="bt-note">只有「首日收盤」可以實際交易；兩種低點是事後才知道的，僅供參考（斜體）。灰字為無條件基準。持有週期未滿的事件不計入，列在「未完成」。</p>
+        ${btTable('summary',s.summary,{group:'評估基準'})}
+        <h2 class="bt-h2" id="${s.id}-pullbacks">表三　突破前高後回檔 5%／10%／15%／20%</h2>
+        <p class="bt-note">回檔＝收盤價相對「突破日起的滾動最高收盤」的跌幅，費時自突破日起算。多個訊號共用同一個突破日時合併成一列。共 ${s.pullbacks.length} 個突破日。</p>
+        ${s.pullbacks.length?btTable('pullbacks',s.pullbacks):'<p class="bt-note">目前沒有已突破前高的事件。</p>'}
+        <h2 class="bt-h2" id="${s.id}-robust">穩健性檢查（持有 30／60 天）</h2>
+        ${robust(s)}
+        <p class="bt-note">分年度：基準＝同一年所有交易日。超額為負代表那一年訊號輸給隨便買。${mk.d[0].slice(5)!=='01-01'?`${mk.year[0]} 年資料從 ${+mk.d[0].slice(5,7)} 月開始，全年漲跌只算到該年第一天以後。`:''}</p>
+        ${btTable('byYear',s.byYear)}
+        <p class="bt-note bt-after">分盤勢：前三種分類在訊號當天就能判斷；「全年漲跌」要到年底才知道，只能用來理解訊號，不能拿來交易。基準＝同一組別的所有交易日。每組只有個位數到二十幾筆，差距要保守看待。</p>
+        ${btTable('byRegime',s.byRegime,{group:'分類方式'})}
+      </section>`;
+
+    main.innerHTML=`
+      <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>訊號回測</span></div>
+      <div class="card r-head">
+        <div class="eyebrow">資料更新至 ${dt(res.last)}（${weekday(res.last)}）・${dt(res.first)} 起共 ${res.days.toLocaleString()} 個交易日</div>
+        <h1>台股籌碼訊號回測</h1>
+        <p class="bt-sub">加權指數收盤價，所有天數皆為日曆天，日期由新到舊。訊號觸發後 10 個交易日內不重複計算。資料直接讀取每日籌碼試算表，試算表更新後重新整理即會重算。</p>
+        ${end?`<p class="bt-warn">驗算模式：只使用 ${dt(end)} 以前的資料。<a href="signals.html">回到最新資料 →</a></p>`:''}
+        ${warn.length?`<details class="bt-warn"><summary>資料檢查有 ${data.warnings.length} 項提醒</summary><ul>${warn.map(w=>`<li>${w}</li>`).join('')}</ul></details>`:''}
+      </div>
+      <div class="bt-tabs" role="tablist">${res.signals.map((s,k)=>`<button class="bt-tab" role="tab" data-tab="${s.id}" aria-selected="${k?'false':'true'}">${s.label}</button>`).join('')}</div>
+      ${res.signals.map(section).join('')}
+      <details class="card bt-details" id="definitions"><summary>定義與計算方式</summary><ul>
+        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤與「強烈落底」欄（BE 欄，值為 O）；「Sheet1」的外資 BP 金額。網頁開啟時即時讀取並計算。</li>
+        <li><b>價格</b>：加權指數收盤價；沒有盤中高低。</li>
+        <li><b>天數</b>：所有「費時」「到達天數」「持有週期」都是日曆天（兩個日期相減）。</li>
+        <li><b>冷卻期</b>：訊號出現後 10 個交易日內的訊號不另計，以最後一個「計入」的訊號為起點。</li>
+        <li><b>持有週期</b>：7／14／30／60／90 個日曆天，出場價取到期日當天或之前最後一個交易日的收盤。資料不足一個完整週期的事件列為「未完成」，不計入統計。</li>
+        <li><b>BP紅燈（歷史前 2%）</b>：外資 BP 金額 ≥ 當天以前（含當天）所有資料由大到小第 k 大的值，k＝資料天數×2% 無條件捨去、至少 1。只用當天以前的資料，所以不會因為後來的資料而改變。連續亮燈只取第一天：距離上一個亮燈日滿 10 個交易日才算新的一次。</li>
+        <li><b>30日內最低點</b>：首日起 30 個日曆天內（含首日）的最低收盤價。</li>
+        <li><b>波段低點</b>：從首日開始追蹤最低收盤價，直到價格自這個低點反彈 10% 以上才確認（確認日）。小於 10% 的反彈不算，跌勢延續時低點會一直往後更新，所以有時離首日很遠。</li>
+        <li><b>自最低站回首日</b>：從 30 日最低點的下一天起，第一次收盤高於首日收盤；天數從最低點起算。<b>站回後再跌破</b>：從站回日的下一天起，第一次收盤低於首日收盤。</li>
+        <li><b>前高</b>：首日之前（不含首日）的歷史最高收盤價。<b>突破</b>：首日之後第一次收盤高於前高。</li>
+        <li><b>回檔</b>：突破日起，每天的收盤價和「突破日以來的最高收盤（滾動最高）」比較；跌幅第一次超過門檻的日期，以及當時的基準高點。</li>
+        <li><b>勝率</b>：期末報酬大於 0 的比例。<b>期望值</b>＝勝率×平均獲利W＋敗率×平均虧損L（等於平均報酬）。<b>盈虧比</b>＝W÷|L|。<b>報酬標準差</b>為樣本標準差。</li>
+        <li><b>最大漲幅／最大跌幅</b>：持有期間收盤價相對進場價的最高／最低點；從沒高於（低於）進場價時記為 0%。</li>
+        <li><b>無條件基準</b>：每一個交易日都當成進場日、持有相同天數的結果。2011 年以來台股大致向上，訊號要贏過這條基準才算有用。</li>
+        <li><b>全年漲跌</b>：該年最後收盤 ÷ 前一年最後收盤 − 1；資料第一年用該年第一天的收盤。</li>
+        <li><b>顏色</b>：沿用本站紅漲綠跌，正值紅、負值綠；橘色＝尚未發生（未達成、未突破、未站回、未確認）。</li>
+        <li><b>資料檢查</b>：日期重複、沒有排序，或 2019 年以後出現週末日期時，頁首會列出提醒（2012～2018 年的週六是補班日，不算錯）。</li>
+      </ul></details>`;
+
+    /* 歷史走勢圖：分頁第一次顯示時才建立（隱藏時量不到寬度） */
+    const made={};
+    const histChart=s=>{
+      if(made[s.id]||!window.LightweightCharts) return; made[s.id]=1;
+      const el=$('#'+s.id+'-hc'), lg=$('#'+s.id+'-lg');
+      const ch=baseChart(el,{rightPriceScale:{borderColor:'#232B3A',mode:1},timeScale:{borderColor:'#232B3A',fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.05},
+        // 滑鼠滾輪＝放大縮小（以滑鼠位置為中心）；按住拖曳＝左右移動；手機兩指縮放、左右滑動，上下滑仍捲動頁面
+        handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+        handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:false},axisDoubleClickReset:false}});
+      (window.__btCharts||(window.__btCharts={}))[s.id]=ch;   // 方便在主控台檢查
+      const ser=ch.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.2)',bottomColor:'rgba(96,165,250,.02)',lineWidth:1.5,priceFormat:{type:'price',precision:0,minMove:1}});
+      ser.setData(mk.d.map((d,i)=>({time:d,value:mk.c[i]})));
+      ser.setMarkers(s.idxs.map(i=>({time:mk.d[i],position:'belowBar',color:UP,shape:'arrowUp'})));
+      ch.timeScale().fitContent();
+      const evd=s.idxs.map(i=>mk.d[i]);
+      const show=t=>{ const i=t?mk.idxOf.get(t):LAST; lg.innerHTML=`<b>${dt(mk.d[i])}</b> 加權 <b>${fmt(mk.c[i])}</b>${evd.includes(mk.d[i])?` ・<span style="color:${UP}">${s.name}</span>`:''}`; };
+      show(); ch.subscribeCrosshairMove(p=>show(p&&tStr(p.time)));
+      /* ---- 日期區間：滑鼠滾輪放大縮小、按住拖曳左右移動；快速按鈕與起訖日期；雙擊回到全部 ---- */
+      const first=mk.d[0], lastD=mk.d[LAST];
+      const tStr=t=>typeof t==='string'?t:(t&&t.year?`${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`:null);
+      const back=n=>new Date((dayNumOf(lastD)-n)*864e5).toISOString().slice(0,10);
+      const iFrom=document.querySelector(`[data-from="${s.id}"]`), iTo=document.querySelector(`[data-to="${s.id}"]`), rgEl=$('#'+s.id+'-rg');
+      [iFrom,iTo].forEach(x=>{ x.min=first; x.max=lastD; });
+      const presets=document.querySelector(`[data-preset="${s.id}"]`);
+      const ts=ch.timeScale();
+      // want：用按鈕／日期指定的區間。圖表量到寬度前設定會失效，所以量到寬度時重新套用；使用者自己滾輪或拖曳後就清掉
+      let want=[first,lastD], preset=0;
+      const reapply=()=>{ if(el.clientWidth&&want) ts.setVisibleRange({from:want[0],to:want[1]}); };
+      if(window.ResizeObserver) new ResizeObserver(()=>setTimeout(reapply,0)).observe(el);
+      setTimeout(reapply,50);
+      const summary=(a,b)=>{
+        let i0=mk.lastOnOrBefore(dayNumOf(a)); if(i0<0||mk.d[i0]<a) i0++; const i1=mk.lastOnOrBefore(dayNumOf(b));
+        if(i0<0||i1<=i0) return;
+        a=mk.d[i0]; b=mk.d[i1]; iFrom.value=a; iTo.value=b;
+        presets.querySelectorAll('button').forEach(x=>x.classList.toggle('on',preset!=null&&x.dataset.n===String(preset)));
+        const chg=(mk.c[i1]/mk.c[i0]-1)*100, inR=evd.filter(d=>d>=a&&d<=b);
+        rgEl.innerHTML=`<b class="num">${dt(a)} – ${dt(b)}</b>・${mk.days(i0,i1).toLocaleString()} 天・加權 <span class="num">${fmt(mk.c[i0])} → ${fmt(mk.c[i1])}</span>（<span class="num ${cls(chg)}">${sign(chg)}${chg.toFixed(2)}%</span>）・期間${s.name} <b class="num">${inR.length}</b> 次${inR.length&&inR.length<=12?`：${inR.slice().reverse().map(d=>`<a href="#ev-${s.id}-${d}" data-jump="${d}">${dt(d)}</a>`).join('、')}`:inR.length?'（日期見表一）':''}`;
+      };
+      const setRange=(a,b,p)=>{
+        a=a<first?first:a>lastD?lastD:a; b=b<first?first:b>lastD?lastD:b; if(a>b) [a,b]=[b,a];
+        if(a===b) return;
+        want=[a,b]; preset=p; reapply(); summary(a,b);
+      };
+      // 圖表顯示範圍改變（滾輪、拖曳、按鈕）時，同步起訖日期與摘要
+      let pend=0;
+      ts.subscribeVisibleTimeRangeChange(()=>{ cancelAnimationFrame(pend); pend=requestAnimationFrame(()=>{ if(want) return; const r=ts.getVisibleRange(); if(r) summary(tStr(r.from),tStr(r.to)); }); });
+      const byUser=()=>{ want=null; preset=null; };
+      el.addEventListener('wheel',byUser,{passive:true});
+      el.addEventListener('pointerdown',e=>{ if(e.button===0) byUser(); });
+      presets.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; const n=+b.dataset.n; setRange(n?back(n):first,lastD,n); });
+      [iFrom,iTo].forEach(x=>x.addEventListener('change',()=>{ if(iFrom.value&&iTo.value) setRange(iFrom.value,iTo.value,null); }));
+      rgEl.addEventListener('click',e=>{ const a=e.target.closest('[data-jump]'); if(!a) return; e.preventDefault(); jump(a.dataset.jump); });
+      el.addEventListener('dblclick',()=>setRange(first,lastD,0));
+      const jump=d=>{ const row=$('#ev-'+s.id+'-'+d); if(row){ row.scrollIntoView({behavior:'smooth',block:'center'}); row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash'); } };
+      summary(first,lastD);
+
+      // 點一下（沒有拖曳）箭頭附近：跳到表一那一列
+      let downX=null;
+      el.addEventListener('pointerdown',e=>{ downX=e.clientX; });
+      ch.subscribeClick(p=>{ if(!p||!p.time) return; if(downX!=null&&p.point&&Math.abs(p.point.x+el.getBoundingClientRect().left-downX)>5) return;
+        const t=dayNumOf(tStr(p.time)); let best=null;
+        evd.forEach(d=>{ const g=Math.abs(dayNumOf(d)-t); if(g<=45&&(!best||g<best.g)) best={d,g}; });
+        if(best) jump(best.d); });
+      document.querySelector(`[data-scale="${s.id}"]`).addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+        ch.priceScale('right').applyOptions({mode:+b.dataset.m}); b.parentNode.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); });
+    };
+    const evMade={};
+    const show=id=>{
+      if(!res.signals.some(s=>s.id===id)) id=res.signals[0].id;
+      document.querySelectorAll('.bt-tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===id?'true':'false'));
+      document.querySelectorAll('section[data-sig]').forEach(x=>{ x.hidden=x.id!==id; });
+      const s=res.signals.find(x=>x.id===id);
+      histChart(s);
+      if(!evMade[id]){ evMade[id]=1; evChart($('#'+id+'-ev'),s.excess,SIG_COLOR[id]||'#3B82F6'); }
+    };
+    document.querySelector('.bt-tabs').addEventListener('click',e=>{ const b=e.target.closest('.bt-tab'); if(!b) return;
+      show(b.dataset.tab); history.replaceState(null,'',location.pathname+location.search+'#'+b.dataset.tab); });
+    const h=(location.hash||'').slice(1).split('-')[0];
+    show(h||res.signals[0].id);
+    window.addEventListener('hashchange',()=>{ const id=location.hash.slice(1).split('-')[0]; if(id) show(id); });
+    if(location.hash.length>1){ const t=document.getElementById(location.hash.slice(1)); if(t&&t.tagName!=='SECTION') setTimeout(()=>t.scrollIntoView(),50); }
+    glossary(main);
+  }).catch(err=>{
+    console.error(err);
+    main.innerHTML=`<div class="card r-head"><h1>台股籌碼訊號回測</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表或計算失敗（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
+  });
+}
 /* =====================================================================
    全文搜尋與主題索引
    ===================================================================== */
@@ -508,11 +787,12 @@ function searchReviews(re){
   return D.reviews.map(r=>{ const hits=reviewDocs(r).filter(d=>{ re.lastIndex=0; return re.test(d.t); });
     const n=hits.reduce((c,d)=>c+(d.t.match(re)||[]).length,0); return {r,hits,n}; }).filter(x=>x.hits.length);
 }
-// 復盤日之後 n 個交易日的指數變化
+// 復盤日收盤到 n 個日曆天後（當天或之前最後一個交易日）的指數變化
 function after(date,n){
-  let i=-1; DAILY.forEach((d,k)=>{ if(d.time<=date) i=k; });
-  if(i<0||i+n>=DAILY.length) return null;
-  return (DAILY[i+n].value-DAILY[i].value)/DAILY[i].value*100;
+  const target=dayNumOf(date)+n; let i=-1, j=-1;
+  DAILY.forEach((d,k)=>{ if(d.time<=date) i=k; if(dayNumOf(d.time)<=target) j=k; });
+  if(i<0||dayNumOf(DAILY[DAILY.length-1].time)<target||j<=i) return null;
+  return (DAILY[j].value-DAILY[i].value)/DAILY[i].value*100;
 }
 const aftTxt = v => v==null?'<span class="dim">尚無</span>':`<span class="${cls(v)}">${sign(v)}${v.toFixed(2)}%</span>`;
 
@@ -558,9 +838,9 @@ function renderTopics(){
     res.innerHTML = `<section class="sec">
       ${qr.g?`<div class="card gdef"><b>${qr.g[0].split('|').join('／')}</b>${qr.g[1]}</div>`:''}
       <div class="sec-h"><h2>「${escHTML(q)}」</h2><p>${R.length?`${R.length} 篇・共 ${total} 處・最新在最上面`:'沒有找到符合的內容'}</p></div>
-      ${R.length?`<div class="card tscroll"><table class="t ftbl"><thead><tr><th>復盤日</th><th class="r">當日收盤</th><th class="r">之後 5 日</th><th class="r">之後 20 日</th><th class="r">提到</th></tr></thead><tbody>
-        ${R.map(({r,n})=>`<tr><td><a href="${href(r)}">${r.date.replace(/-/g,'/')}</a></td><td class="r num">${fmt(r.close)}</td><td class="r num">${aftTxt(after(r.date,5))}</td><td class="r num">${aftTxt(after(r.date,20))}</td><td class="r num">${n} 處</td></tr>`).join('')}
-        </tbody></table><div class="tbl-n">「之後 N 日」＝復盤日收盤到第 N 個交易日收盤的加權指數變化，只是當週提到此主題後的大盤走勢，不代表訊號本身的績效。</div></div>
+      ${R.length?`<div class="card tscroll"><table class="t ftbl"><thead><tr><th>復盤日</th><th class="r">當日收盤</th><th class="r">之後 7 天</th><th class="r">之後 30 天</th><th class="r">提到</th></tr></thead><tbody>
+        ${R.map(({r,n})=>`<tr><td><a href="${href(r)}">${r.date.replace(/-/g,'/')}</a></td><td class="r num">${fmt(r.close)}</td><td class="r num">${aftTxt(after(r.date,7))}</td><td class="r num">${aftTxt(after(r.date,30))}</td><td class="r num">${n} 處</td></tr>`).join('')}
+        </tbody></table><div class="tbl-n">「之後 N 天」＝復盤日收盤到 N 個日曆天後（當天或之前最後一個交易日）收盤的加權指數變化，只是當週提到此主題後的大盤走勢，不代表訊號本身的績效。</div></div>
       <div class="hits">${R.map(({r,hits,n})=>{ const show=hits.slice(0,4), more=hits.slice(4);
         const li=d=>`<li><a href="${href(r)}${d.a?'#'+d.a:''}"><span class="hl-l">${escHTML(d.l)}</span>${snippet(d.t,qr.re)}</a></li>`;
         return `<div class="card hit">
@@ -622,7 +902,7 @@ function glossary(root){
   }));
   pats.sort((a,b)=>b.n.length-a.n.length);
   const re=new RegExp(pats.map(x=>x.p).join('|'),'g');
-  const SKIP='a,script,style,.term,.chart,.chart-legend,.toc,.nav,.num,button,.colpick,#dtable';
+  const SKIP='a,script,style,.noterm,.term,.chart,.chart-legend,.toc,.nav,.num,button,.colpick,#dtable';
   const seen=new WeakMap();
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>
     n.nodeValue.trim()&&!n.parentElement.closest(SKIP)?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
@@ -664,4 +944,5 @@ if(page==='home'){ renderHome(); glossary(document.querySelector('main')); }
 if(page==='review'){ renderReview(document.body.dataset.id); highlightHits($('#main')); glossary($('#main')); }
 if(page==='chips') renderChips();
 if(page==='topics'){ renderTopics(); }
+if(page==='signals') renderSignals();
 })();
