@@ -333,3 +333,5 @@ mark.hit-m.cur{background:#F59E0B;color:#0B0E14}
   .hit-h{flex-wrap:wrap;gap:4px 10px}
   .hit-h b{flex-basis:100%;order:3}
 }
+.dgrid.keys b{font-size:15px}
+.hk-pills{align-items:center;margin-top:12px}

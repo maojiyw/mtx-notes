@@ -147,7 +147,11 @@ function renderHome(){
       <div class="eyebrow">最新復盤・${latest.date.replace(/-/g,'/')}</div>
       <h1>${latest.title}</h1>
       <p>${latest.summary}</p>
-      <div class="hero-price"><span class="px num ${cls(latest.chg)}">${fmt(latest.close)}</span><span class="ch num ${cls(latest.chg)}">${sign(latest.chg)}${fmt(latest.chg)}（${sign(latest.pct)}${latest.pct}%）</span><span class="badge">加權指數收盤</span></div>
+      <div class="dgrid keys">
+        <div><span>復盤週次</span><b class="num">${md(latest.week[0])} – ${md(latest.week[1])}</b></div>
+        <div><span>部位</span><b>${latest.position||'—'}</b></div>
+      </div>
+      <div class="pills hk-pills"><span class="sigs-h">本週重點</span>${latest.pills.map(([c,t])=>`<span class="pill ${c}">${t}</span>`).join('')}</div>
       <div class="ctas"><a class="cta" href="${reviewUrl(latest)}">閱讀本週復盤 →</a><a class="cta ghost" href="#list">所有復盤</a></div>
     </div>
     <div class="card hero-main feat feat-chips" id="daily"><div class="feat-tag"><i class="live"></i>每日籌碼<span>每日更新</span></div><p class="loading">讀取試算表中…</p></div>`;
