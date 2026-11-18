@@ -348,3 +348,82 @@ mark.hit-m.cur{background:#F59E0B;color:#0B0E14}
   .tick{order:3;width:100%;justify-content:center;padding:3px 10px}
   .tick > span.num{display:inline}
 }
+
+/* ---------- 訊號回測 ---------- */
+.nav-tabs .tab-signals{color:#D8B4FE;border-color:rgba(168,85,247,.4)}
+.nav-tabs .tab-signals.on{color:#E9D5FF;border-color:rgba(168,85,247,.75);background:rgba(168,85,247,.14)}
+.bt-sub{color:var(--muted);font-size:13px;margin-top:6px}
+.bt-warn{margin-top:10px;font-size:13px;color:#FCD34D}
+.bt-warn a{color:#93C5FD;margin-left:6px}
+.bt-warn summary{cursor:pointer}
+.bt-warn ul{margin:6px 0 0 18px;color:var(--muted)}
+.bt-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 14px}
+.bt-tab{font:inherit;font-size:14px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer}
+.bt-tab:hover{color:var(--text);border-color:var(--line2)}
+.bt-tab[aria-selected="true"]{color:var(--text);border-color:rgba(168,85,247,.7);background:rgba(168,85,247,.12)}
+.bt-status{margin-bottom:14px}
+.bt-status .dgrid{margin-top:0;border:0;border-radius:0;grid-template-columns:repeat(4,1fr)}
+.bt-lead{font-size:15px;line-height:1.85;margin:4px 0 6px;color:#D5DBE5}
+.bt-h2{font-size:18px;font-weight:700;margin:30px 0 4px;scroll-margin-top:72px}
+.bt-note{color:var(--muted);font-size:12.5px;margin:0 0 10px}
+.bt-after{margin-top:10px}
+.bt-card{padding:12px 14px 6px}
+.bt-legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-bottom:4px}
+.bt-sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.bt-ev{position:relative;min-height:230px}
+.bt-ax{fill:var(--muted);font-size:11px;font-family:var(--mono)}
+.bt-val{fill:#AEB7C7;font-size:10px;font-family:var(--mono)}
+.bt-tip{position:absolute;pointer-events:none;background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:5px 9px;font-size:12px;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.4);opacity:0;transition:opacity .1s}
+.bt-tip.on{opacity:1}
+.bt-chartbar{display:flex;justify-content:flex-end;padding:8px 10px 0}
+.bt-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+table.t.bt{font-size:12.5px;font-variant-numeric:tabular-nums}
+table.t.bt th,table.t.bt td{white-space:nowrap;padding:6px 10px;text-align:right;font-family:var(--mono)}
+table.t.bt th{font-family:inherit;background:var(--card2)}
+table.t.bt .tx{text-align:left;font-family:inherit}
+table.t.bt th:first-child,table.t.bt td:first-child{position:sticky;left:0;z-index:1;background:var(--card2);text-align:left}
+table.t.bt td:first-child{background:#181E2A}
+table.t.bt tr.base td{color:var(--muted)}
+table.t.bt tr.base td.up,table.t.bt tr.base td.down{opacity:.8}
+table.t.bt tr.ref td{font-style:italic}
+table.t.bt tr.grp td{border-top:2px solid var(--line2)}
+table.t.bt td.pend{color:var(--amber)}
+table.t.bt tr.flash td{animation:btflash 1.6s ease-out}
+@keyframes btflash{0%,40%{background:rgba(168,85,247,.28)}100%{background:transparent}}
+.bt-details{margin-top:32px;padding:14px 18px;font-size:13px;color:var(--muted);line-height:1.8}
+.bt-details summary{cursor:pointer;color:var(--text);font-size:15px;font-weight:600}
+.bt-details ul{margin:10px 0 0 18px;display:flex;flex-direction:column;gap:4px}
+@media (max-width:900px){ .bt-status .dgrid{grid-template-columns:1fr 1fr} }
+@media (max-width:560px){
+  .nav-tabs .tab-signals .lbl{display:none}
+  .bt-lead{font-size:14.5px}
+  .bt-tab{font-size:13px;padding:7px 11px}
+}
+/* 導覽列：4 個分頁在中等寬度會擠爆，依寬度逐步收起文字、把即時指數移到第二行 */
+@media (max-width:1000px){
+  .nav-tabs .tab-signals .lbl,.nav-tabs .tab-search .lbl{display:none}
+  .nav-tabs .cnt{display:none}
+}
+@media (max-width:760px){
+  .nav-in{flex-wrap:wrap;height:auto;padding-top:8px;padding-bottom:8px;row-gap:8px}
+  .tick{order:3;width:100%;justify-content:center;padding:3px 10px}
+  .tick > span.num{display:inline}
+  .nav-tabs a{padding:6px 10px;font-size:13px}
+}
+@media (max-width:760px){ .bt-h2{scroll-margin-top:124px} }
+/* 走勢圖日期區間 */
+.bt-chartbar{flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-start}
+.bt-chartbar [data-scale]{margin-left:auto}
+.bt-dates{display:flex;align-items:center;gap:6px}
+.bt-dates i{font-style:normal;color:var(--muted)}
+.bt-dates input{font:inherit;font-family:var(--mono);font-size:12.5px;color:var(--text);background:var(--card2);border:1px solid var(--line2);border-radius:7px;padding:3px 6px;color-scheme:dark}
+.bt-dates input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.bt-range{padding:6px 12px 0;font-size:12.5px;color:var(--muted);line-height:1.7}
+.bt-range a{color:#93C5FD;font-family:var(--mono)}
+.bt-range a:hover{text-decoration:underline}
+.bt-hist{touch-action:pan-y;cursor:grab}
+.bt-hist:active{cursor:grabbing}
+@media (max-width:560px){
+  .bt-dates{order:3;width:100%}
+  .bt-dates input{flex:1;min-width:0}
+}
