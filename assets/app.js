@@ -29,6 +29,53 @@ function nav(activeId){
       <a href="${base}chips.html" class="tab-chips${onChips?' on':''}"><i class="live"></i>每日籌碼</a>
       <a href="${base}topics.html" class="tab-search${onTopics?' on':''}" aria-label="搜尋與主題"><i class="ico">⌕</i><span class="lbl">搜尋</span></a>
     </nav></div>`;
+  liveTicker();
+}
+
+/* ---------- 即時大盤指數（導覽列）----------
+   LIVE_URL：Cloudflare Worker 網址（worker/taiex.js），盤中約 5 秒級報價。
+   留空或讀取失敗時，改用證交所盤後「價格指數」的最新收盤。 */
+const LIVE_URL = '';
+const TWSE_CLOSE = 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json&type=IND';
+function tpeNow(){ const d=new Date(Date.now()+8*3600e3); return {day:d.getUTCDay(), hm:d.getUTCHours()*100+d.getUTCMinutes(), ymd:d.toISOString().slice(0,10).replace(/-/g,'')}; }
+const inSession = () => { const t=tpeNow(); return t.day>=1&&t.day<=5&&t.hm>=845&&t.hm<=1335; };
+async function quoteLive(){
+  const r=await fetch(LIVE_URL,{cache:'no-store'}); if(!r.ok) throw new Error(r.status);
+  const j=await r.json(); if(j.price==null&&j.prev==null) throw new Error('empty');
+  const px=j.price!=null?j.price:j.prev, closed=j.date!==tpeNow().ymd||j.time>='13:30';
+  return {px, chg:px-j.prev, pct:(px-j.prev)/j.prev*100, date:j.date, time:j.time, live:!closed};
+}
+async function quoteClose(){
+  const K='mtx-taiex-close';
+  try{ const c=JSON.parse(sessionStorage.getItem(K)); if(c&&Date.now()-c.at<10*60e3) return c.q; }catch(e){}
+  const j=await (await fetch(TWSE_CLOSE)).json();
+  let row; (j.tables||[]).some(t=>(row=(t.data||[]).find(r=>r[0]==='發行量加權股價指數')));
+  if(!row) throw new Error('no row');
+  const num=s=>parseFloat(String(s).replace(/,/g,'')), down=/-/.test(row[2].replace(/<[^>]*>/g,''));
+  const q={px:num(row[1]), chg:(down?-1:1)*num(row[3]), pct:num(row[4]), date:j.date, time:'13:30', live:false};
+  try{ sessionStorage.setItem(K,JSON.stringify({at:Date.now(),q})); }catch(e){}
+  return q;
+}
+let tickTimer=null;
+function liveTicker(){
+  const inner=$('#nav .nav-in'); if(!inner) return;
+  let el=$('#tick'); if(!el){ el=document.createElement('div'); el.id='tick'; el.className='tick'; inner.insertBefore(el,inner.querySelector('.nav-tabs')); }
+  const draw=q=>{
+    const c=cls(q.chg), dt=`${q.date.slice(4,6)}/${q.date.slice(6,8)}`;
+    el.innerHTML=`<span class="tk-l">加權</span><b class="num ${c}">${fmt(q.px,2)}</b><span class="num ${c}">${sign(q.chg)}${fmt(q.chg,2)}（${sign(q.pct)}${q.pct.toFixed(2)}%）</span>`+
+      `<em class="${q.live?'on':''}">${q.live?`<i class="live"></i>盤中 ${q.time.slice(0,5)}`:`收盤 ${dt}`}</em>`;
+    el.title=q.live?'證交所即時報價（約 5 秒延遲），盤中每 15 秒更新':`證交所 ${dt} 收盤`;
+  };
+  const tick=async()=>{
+    clearTimeout(tickTimer);
+    let q=null;
+    if(LIVE_URL){ try{ q=await quoteLive(); }catch(e){} }
+    if(!q){ try{ q=await quoteClose(); }catch(e){} }
+    if(q) draw(q); else if(!el.innerHTML) el.remove();
+    tickTimer=setTimeout(tick, LIVE_URL&&inSession()?15e3:5*60e3);
+  };
+  if(!liveTicker.bound){ liveTicker.bound=true; document.addEventListener('visibilitychange',()=>{ if(document.hidden) clearTimeout(tickTimer); else tick(); }); }
+  tick();
 }
 
 /* ---------- charts ---------- */

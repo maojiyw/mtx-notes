@@ -335,3 +335,16 @@ mark.hit-m.cur{background:#F59E0B;color:#0B0E14}
 }
 .dgrid.keys b{font-size:15px}
 .hk-pills{align-items:center;margin-top:12px}
+/* ---------- live index ticker (nav) ---------- */
+.tick{display:flex;align-items:baseline;gap:8px;font-size:13px;white-space:nowrap;padding:5px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card)}
+.tick .tk-l{color:var(--muted);font-size:12px}
+.tick b{font-size:15px;font-weight:600}
+.tick em{font-style:normal;font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.tick em.on{color:#86EFAC}
+.tick .live{width:6px;height:6px}
+@media (max-width:900px){ .tick > span.num{display:none} }
+@media (max-width:560px){
+  .nav-in{flex-wrap:wrap;height:auto;padding-top:8px;padding-bottom:8px;row-gap:8px}
+  .tick{order:3;width:100%;justify-content:center;padding:3px 10px}
+  .tick > span.num{display:inline}
+}
