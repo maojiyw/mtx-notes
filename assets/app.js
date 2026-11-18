@@ -35,7 +35,7 @@ function nav(activeId){
 /* ---------- 即時大盤指數（導覽列）----------
    LIVE_URL：Cloudflare Worker 網址（worker/taiex.js），盤中約 5 秒級報價。
    留空或讀取失敗時，改用證交所盤後「價格指數」的最新收盤。 */
-const LIVE_URL = '';
+const LIVE_URL = 'https://mtx-notes-taiex.maoji-yw.workers.dev/';
 const TWSE_CLOSE = 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json&type=IND';
 function tpeNow(){ const d=new Date(Date.now()+8*3600e3); return {day:d.getUTCDay(), hm:d.getUTCHours()*100+d.getUTCMinutes(), ymd:d.toISOString().slice(0,10).replace(/-/g,'')}; }
 const inSession = () => { const t=tpeNow(); return t.day>=1&&t.day<=5&&t.hm>=845&&t.hm<=1335; };
