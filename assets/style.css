@@ -173,7 +173,7 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
 .chart.tall{height:260px}
 .t.daily td,.t.daily th{white-space:nowrap}
 .t.daily tr.sig td{background:rgba(239,68,68,.08)}
-.t.daily .sigcell{color:#F87171;font-size:12px;white-space:normal;min-width:120px}
+.t.daily .sigcell{color:#F87171;font-size:12px;white-space:normal;min-width:220px}
 
 /* ---------- feature tabs & cards ---------- */
 .nav-tabs{display:flex;gap:6px;margin-left:auto}
