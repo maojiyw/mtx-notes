@@ -316,7 +316,7 @@ function renderCredit(M,body,noteEl){
     const statRows=[['上市融資（億）',col(c=>c.twse?c.twse.loanChg:null),2],['上櫃融資（億）',col(c=>c.tpex?c.tpex.loanChg:null),2],
       ...codes.map(code=>[`${code} 融資（張）`,etfSeries(code),0])];
     const sumN=(v,n)=>v.slice(-n).reduce((s,x)=>s+(x||0),0);
-    const rng=s=>s.n?`<b class="num">${s.n}</b> 天<em>${md(s.start)}–${md(s.end)}</em>`:'—';
+    const rng=s=>s.n?`<b class="num">${s.n}</b> 天<em>${s.start.replace(/-/g,"/")}–${s.start.slice(0,4)===s.end.slice(0,4)?md(s.end):s.end.replace(/-/g,"/")}</em>`:'—';
     const statTable = `
       <div class="tbl"><div class="tbl-h">歷史統計（${dates[0].replace(/-/g,'/')} 起，共 ${C.length} 個交易日）</div><div class="tscroll noterm"><table class="t cr-t">
         <thead><tr><th>項目</th><th class="r">目前</th><th class="r">近 5 日合計</th><th class="r">近 20 日合計</th><th class="r">最長連增</th><th class="r">最長連減</th></tr></thead>
