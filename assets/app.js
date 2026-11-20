@@ -128,6 +128,7 @@ function chipCharts(ids,C,{end=null,days=90}={}){
     h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
     h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'}); c2.timeScale().fitContent();
   }
+  const sub3=$(ids[2]+'s'); if(sub3) sub3.textContent=C.micro?'柱＝微台多單（口）・線＝小+微持倉百分位':'柱＝口數・線＝持倉比';
   if(!empty(ids[2],C.rtLong)){
     const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
     const h3=c3.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},color:'rgba(239,68,68,.35)'});
@@ -148,7 +149,7 @@ const chipCardsHTML = (p) => `
   <div class="grid3">
     <div class="card"><div class="card-h"><span>外資期貨未平倉</span> <span class="sub">口・相對結算日</span></div><div class="mini" id="${p}1"></div></div>
     <div class="card"><div class="card-h"><span>外資 BP 金額</span> <span class="sub">千元・紫＝過熱</span></div><div class="mini" id="${p}2"></div></div>
-    <div class="card"><div class="card-h"><span>散戶多單</span> <span class="sub">柱＝口數・線＝持倉比</span></div><div class="mini" id="${p}3"></div></div>
+    <div class="card"><div class="card-h"><span>散戶多單</span> <span class="sub" id="${p}3s">柱＝口數・線＝持倉比</span></div><div class="mini" id="${p}3"></div></div>
   </div>`;
 
 /* ---------- tables ---------- */
@@ -167,7 +168,7 @@ function dailyCard(el){
   const S=window.MTXSheet; if(!S) return;
   const head=el.querySelector('.feat-tag').outerHTML;
   S.load().then(d=>{
-    const R=d.rows, L=R[R.length-1];
+    const R=d.rows, L=R[R.length-1], P=R[R.length-2]||{};
     const lastStrong=[...R].reverse().find(isStrong);
     const cell=(k,v,sub,c='')=>`<div><span>${k}</span><b class="num ${c}">${v}</b>${sub?`<em>${sub}</em>`:''}</div>`;
     el.innerHTML = head + `
@@ -177,7 +178,7 @@ function dailyCard(el){
         ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
         ${cell('外資現貨',sign(L.fiSpot)+n2(L.fiSpot)+' 億','',cls(L.fiSpot))}
         ${cell('外資 BP 金額',n0(L.bp),'BC '+n0(L.bc)+'・SC '+n0(L.sc))}
-        ${cell('散戶多單／空單',n0(L.rtLong)+'／'+n0(L.rtShort),'多單百分位 '+pctTxt(L.rtLongPct))}
+        ${cell('微台多單／空單',n0(L.mxLong)+'／'+n0(L.mxShort),'多單較前日 '+(P.mxLong==null||L.mxLong==null?'—':sign(L.mxLong-P.mxLong)+fmt(L.mxLong-P.mxLong,0)))}
       </div>
       <div class="sigs"><span class="sigs-h">今日訊號</span>${sigPills(L)}${lastStrong?`<span class="sigs-last">最近強烈落底 <b class="num">${lastStrong.date.replace(/-/g,'/')}</b></span>`:''}</div>
       <div class="ctas"><a class="cta amber" href="chips.html">看每日籌碼 →</a></div>`;
@@ -354,7 +355,7 @@ function renderChips(){
     const ranges=[['1M',30],['3M',91],['6M',182],['1Y',365],['3Y',1095],['全部',0]];   // 日曆天
     const back=n=>new Date((dayNumOf(L.date)-n)*864e5).toISOString().slice(0,10);
     const first=R[0].date, last=L.date;
-    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空','多單紅・空單綠（口）']];
+    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）']];
     main.innerHTML = `
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>每日籌碼</span></div>
       <div class="card r-head">
@@ -373,7 +374,7 @@ function renderChips(){
         ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`前日增減 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
         ${kpi('外資 BP 金額',n0(L.bp),`較前日 ${sgn0(delta('bp'))}・BP/SP 增幅比 ${L.bpsp==null?'—':L.bpsp.toFixed(1)+'%'}`)}
         ${kpi('外資 BC／SC 金額',`${n0(L.bc)}／${n0(L.sc)}`,`BC/SC 增幅比 ${L.bcsc==null?'—':L.bcsc.toFixed(1)+'%'}`)}
-        ${kpi('散戶多單／空單',`${n0(L.rtLong)}／${n0(L.rtShort)}`,`多單持倉百分位 ${pctTxt(L.rtLongPct)}・較前日 ${sgn0(delta('rtLong'))}`)}
+        ${kpi('微台多單／空單',`${n0(L.mxLong)}／${n0(L.mxShort)}`,`多單較前日 ${sgn0(delta('mxLong'))}・空單較前日 ${sgn0(delta('mxShort'))}`)}
       </div></div>
 
       <section class="sec">
@@ -457,8 +458,8 @@ function renderChips(){
     c=mk(2); lines(c,[['sc','#10B981'],['bc','#EF4444'],['bp','#A855F7']]);
     legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
 
-    c=mk(3); lines(c,[['rtShort','#10B981'],['rtLong','#EF4444']]);
-    legend(3,r=>`多 <b class="up">${n0(r.rtLong)}</b> 空 <b class="down">${n0(r.rtShort)}</b> 多單百分位 ${pctTxt(r.rtLongPct)}`,c);
+    c=mk(3); lines(c,[['mxShort','#10B981'],['mxLong','#EF4444']]);
+    legend(3,r=>`微台多 <b class="up">${n0(r.mxLong)}</b> 空 <b class="down">${n0(r.mxShort)}</b>`,c);
 
     byN(182);
   }).catch(err=>{

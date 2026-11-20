@@ -116,7 +116,7 @@ window.MTXSheet = (function(){
   /* 給籌碼小圖用：轉成和 data.js 的 chips 相同的格式 */
   function asChips(d){
     const R=d.rows;
-    return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), rtLong:R.map(r=>r.rtLong), rtPct:R.map(r=>r.rtLongPct) };
+    return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), rtLong:R.map(r=>r.mxLong), rtPct:R.map(r=>r.rtLongPct), micro:true };   // 散戶多單＝微台（AO 欄）；持倉百分位只有小+微
   }
   return { load, asChips, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
 })();
