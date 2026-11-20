@@ -126,7 +126,11 @@ function chipCharts(ids,C,{end=null,days=90}={}){
   if(!empty(ids[1],C.fiBP)){
     const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
     h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
-    h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'}); c2.timeScale().fitContent();
+    // BP紅燈門檻：試算表資料用逐日滾動門檻（歷史前 2%）；退回筆記數字時用筆記的 3.64 億
+    if(C.fiBPThr){ const l2=c2.addLineSeries({color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈',priceLineVisible:false,crosshairMarkerVisible:false,priceFormat:{type:'volume'}});
+      l2.setData(pick(C.fiBPThr).map(x=>({time:x.time,value:x.v}))); }
+    else h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'});
+    c2.timeScale().fitContent();
   }
   if(!empty(ids[2],C.rtLong)){
     const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
@@ -185,6 +189,29 @@ function dailyCard(el){
     el.innerHTML = head + `<p style="color:var(--muted);margin-top:10px">暫時讀不到籌碼試算表，請稍後再試。</p><div class="ctas"><a class="cta amber" href="chips.html">前往每日籌碼 →</a></div>`;
   });
 }
+/* 主頁波段 KPI：最新收盤與外資 BP 峰值改用每日籌碼試算表（讀不到時保留 data.js 的數字）
+   BP 峰值＝前高日以後的最大 BP；紅燈門檻＝BP紅燈（歷史前 2%）定義，與 backtest.js 相同 */
+function campaignLive(lo,peakIntra){
+  const S=window.MTXSheet; if(!S) return;
+  S.load().then(d=>{
+    const L=d.rows[d.rows.length-1], kl=$('#kpiLast');
+    if(kl&&L&&L.idx!=null){
+      const rec=(L.idx-lo)/(peakIntra-lo)*100;
+      const sub=L.idx<lo?`已跌破波段低點 ${((L.idx/lo-1)*100).toFixed(2)}%`:`已收復約 ${rec.toFixed(0)}% 跌幅`;
+      kl.innerHTML=`<span>最新收盤（${md(L.date)}）</span><b class="num ${cls(L.chg)}">${fmt(L.idx)}</b><em>${sub}</em>`;
+    }
+    const B=d.bpSeries||[], kb=$('#kpiBP'); if(!kb||!B.length) return;
+    const from=D.campaign.high.date, T=S.bpRedLine(B), thr=T[T.length-1].thr; let peak=null, lit=null;
+    T.forEach(s=>{
+      if(s.date<from) return;
+      if(!peak||s.bp>peak.bp) peak=s;
+      if(!lit&&s.bp>=s.thr) lit=s;
+    });
+    if(!peak) return;
+    const yi=v=>(v/1e6).toFixed(2)+' 億';
+    kb.innerHTML=`<span>外資 BP 峰值（${md(peak.date)}）</span><b class="num" style="color:#C084FC">${yi(peak.bp)}</b><em>紅燈約 ${yi(thr)}，${lit?md(lit.date)+' 觸發':'未觸發'}</em>`;
+  }).catch(()=>{});
+}
 function renderHome(){
   nav(null);
   const latest=D.reviews[0], last=DAILY[DAILY.length-1];
@@ -206,12 +233,13 @@ function renderHome(){
     </div>
     <div class="card hero-main feat feat-chips" id="daily"><div class="feat-tag"><i class="live"></i>每日籌碼<span>每日更新</span></div><p class="loading">讀取試算表中…</p></div>`;
   dailyCard($('#daily'));
+  setTimeout(()=>campaignLive(lo,peakIntra));
   $('#campaign').innerHTML = `<div class="card"><div class="kpis k6">
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
-      <div class="kpi"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
-      <div class="kpi"><span>目前部位</span><b class="num">${latest.position}</b><em>11/2 以 1.68 倍進場</em></div>
-      <div class="kpi"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">3.25 億</b><em>紅燈約 3.64 億，未觸發</em></div>
+      <div class="kpi" id="kpiLast"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
+      <div class="kpi"><span>目前部位</span><b class="num">${latest.position}</b>${latest.positionNote?`<em>${latest.positionNote}</em>`:''}</div>
+      <div class="kpi" id="kpiBP"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">3.25 億</b><em>紅燈約 3.64 億，未觸發</em></div>
       <div class="kpi"><span>復盤篇數</span><b class="num">${D.reviews.length} 篇</b><em>${md(D.reviews[D.reviews.length-1].date)} – ${md(latest.date)}</em></div>
     </div></div>`;
 
