@@ -152,6 +152,7 @@ function chipCharts(ids,C,{end=null,days=90}={}){
     else h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'});
     c2.timeScale().fitContent();
   }
+  const sub3=$(ids[2]+'s'); if(sub3) sub3.textContent=C.micro?'柱＝微台多單（口）・線＝小+微持倉百分位':'柱＝口數・線＝持倉比';
   if(!empty(ids[2],C.rtLong)){
     const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
     const h3=c3.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},color:'rgba(239,68,68,.35)'});
@@ -172,7 +173,7 @@ const chipCardsHTML = (p) => `
   <div class="grid3">
     <div class="card"><div class="card-h"><span>外資期貨未平倉</span> <span class="sub">口・相對結算日</span></div><div class="mini" id="${p}1"></div></div>
     <div class="card"><div class="card-h"><span>外資 BP 金額</span> <span class="sub">千元・紫＝過熱</span></div><div class="mini" id="${p}2"></div></div>
-    <div class="card"><div class="card-h"><span>散戶多單</span> <span class="sub">柱＝口數・線＝持倉比</span></div><div class="mini" id="${p}3"></div></div>
+    <div class="card"><div class="card-h"><span>散戶多單</span> <span class="sub" id="${p}3s">柱＝口數・線＝持倉比</span></div><div class="mini" id="${p}3"></div></div>
   </div>`;
 
 /* ---------- tables ---------- */
@@ -191,8 +192,8 @@ function dailyCard(el){
   const S=window.MTXSheet; if(!S) return;
   const head=el.querySelector('.feat-tag').outerHTML;
   S.load().then(d=>{
-    const R=d.rows, L=R[R.length-1], sigs=sigList(L);
-    const lastStrong=[...R].reverse().find(r=>sigOn(r.sigStrong));
+    const R=d.rows, L=R[R.length-1], P=R[R.length-2]||{};
+    const lastStrong=[...R].reverse().find(isStrong);
     const cell=(k,v,sub,c='')=>`<div><span>${k}</span><b class="num ${c}">${v}</b>${sub?`<em>${sub}</em>`:''}</div>`;
     el.innerHTML = head + `
       <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）</div>
@@ -201,9 +202,9 @@ function dailyCard(el){
         ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
         ${cell('外資現貨',sign(L.fiSpot)+n2(L.fiSpot)+' 億','',cls(L.fiSpot))}
         ${cell('外資 BP 金額',n0(L.bp),'BC '+n0(L.bc)+'・SC '+n0(L.sc))}
-        ${cell('散戶多單／空單',n0(L.rtLong)+'／'+n0(L.rtShort),'多單百分位 '+pctTxt(L.rtLongPct))}
+        ${cell('微台多單／空單',n0(L.mxLong)+'／'+n0(L.mxShort),'多單較前日 '+(P.mxLong==null||L.mxLong==null?'—':sign(L.mxLong-P.mxLong)+fmt(L.mxLong-P.mxLong,0)))}
       </div>
-      <div class="sigs"><span class="sigs-h">今日訊號</span>${sigs.length?sigs.map(t=>`<span class="pill r">${t}</span>`).join(''):'<span class="pill">無落底訊號</span>'}${lastStrong?`<span class="sigs-last">最近強烈落底 <b class="num">${lastStrong.date.replace(/-/g,'/')}</b></span>`:''}</div>
+      <div class="sigs"><span class="sigs-h">今日訊號</span>${sigPills(L)}${lastStrong?`<span class="sigs-last">最近強烈落底 <b class="num">${lastStrong.date.replace(/-/g,'/')}</b></span>`:''}</div>
       <div class="ctas"><a class="cta amber" href="chips.html">看每日籌碼 →</a></div>`;
   }).catch(()=>{
     el.innerHTML = head + `<p style="color:var(--muted);margin-top:10px">暫時讀不到籌碼試算表，請稍後再試。</p><div class="ctas"><a class="cta amber" href="chips.html">前往每日籌碼 →</a></div>`;
@@ -467,9 +468,14 @@ function renderReview(id){
 /* =====================================================================
    每日籌碼頁（讀 Google 試算表）
    ===================================================================== */
-const SIG = [['sigSPQty','外資 SP 口數'],['sigSPAmt','外資 SP 金額'],['sigMicro','落底・微台'],['sigBoth','落底・小+微'],['sigAmp','落底・幅度'],['sigStrong','強烈落底'],['sig3','連續三天期貨逆增']];
+/* 落底訊號：收跌日由 sheet.js 的 dropSignals 計算兩組（微台／小+微），每組 4 項，前面的數字＝滿足幾項；
+   任一組 4 項全滿足＝強烈落底。「幅度」「連續三天期貨逆增」仍讀試算表欄位 */
+const SIG = [['sigAmp','落底・幅度'],['sig3','連續三天期貨逆增']];
 const sigOn = v => v!=null && v!=='' && v!=='0';
-const sigList = r => SIG.filter(([k])=>sigOn(r[k])).map(([k,t])=>(/^\d+$/.test(r[k])?`${t} ${r[k]}`:t));
+const isStrong = r => !!((r.g1&&r.g1.n===4)||(r.g2&&r.g2.n===4));
+const sigGroups = r => [r.g1,r.g2].filter(g=>g&&g.n).map(g=>`${g.n}｜${g.items.join('、')}`);
+const sigList = r => [...(isStrong(r)?['強烈落底']:[]), ...sigGroups(r), ...SIG.filter(([k])=>sigOn(r[k])).map(([k,t])=>(/^\d+$/.test(r[k])?`${t} ${r[k]}`:t))];
+const sigPills = r => { const s=sigList(r); return s.length?s.map(t=>`<span class="pill ${t==='強烈落底'?'r':'a'}">${t}</span>`).join(''):'<span class="pill">無落底訊號</span>'; };
 const n0 = v => v==null?'—':fmt(v,0);
 const n2 = v => v==null?'—':fmt(v,2);
 const sgn0 = v => v==null?'—':`<span class="${cls(v)}">${sign(v)}${fmt(v,0)}</span>`;
@@ -480,17 +486,17 @@ const COLS = [
   ['idx','加權','n2','大盤',1],['chg','漲跌','c2','大盤',0],['pct','漲跌%','pct','大盤',1],['vol','成交量(億)','n0','大盤',0],
   ['fiSpot','外資現貨(億)','c2','外資期貨',1],['fiOI','外資期貨<br>總未平倉','c0','外資期貨',0],['fiRel','外資期貨<br>相對結算','c0','外資期貨',1],['fiDelta','前日增減','c0','外資期貨',1],
   ['bp','BP 金額','n0','外資選擇權',1],['sp','SP 金額','n0','外資選擇權',0],['bc','BC 金額','n0','外資選擇權',0],['sc','SC 金額','n0','外資選擇權',0],['bpsp','BP/SP<br>增幅比','r1','外資選擇權',0],['bcsc','BC/SC<br>增幅比','r1','外資選擇權',0],
-  ['rtLong','散戶多','n0','散戶',1],['rtShort','散戶空','n0','散戶',1],['rtLongPct','多單百分位','pp','散戶',1],['rtShortPct','空單百分位','pp','散戶',0],['mxLong','微台多','n0','散戶',0],['mxShort','微台空','n0','散戶',0],
+  ['mxLong','微台多','n0','散戶',1],['mxShort','微台空','n0','散戶',1],['rtLong','小+微多','n0','散戶',0],['rtShort','小+微空','n0','散戶',0],['rtLongPct','多單百分位','pp','散戶',1],['rtShortPct','空單百分位','pp','散戶',0],
   ['sig','訊號','sig','訊號',1]
 ];
-const COLS_KEY='mtx-cols-v1';
+const COLS_KEY='mtx-cols-v2';   // v2：散戶預設改為微台多／空（舊的欄位選擇會重設為預設）
 const colsDefault = () => COLS.filter(c=>c[4]).map(c=>c[0]);
 function colsLoad(){ try{ const v=JSON.parse(localStorage.getItem(COLS_KEY)); if(Array.isArray(v)&&v.length) return v.filter(k=>COLS.some(c=>c[0]===k)); }catch(e){} return colsDefault(); }
 function colsSave(v){ try{ localStorage.setItem(COLS_KEY,JSON.stringify(v)); }catch(e){} }
 function cellHTML(r,[k,,f]){
   const v=r[k];
   switch(f){
-    case 'sig': return `<td class="sigcell">${sigList(r).join('、')}</td>`;
+    case 'sig': return `<td class="sigcell">${sigList(r).join('<br>')}</td>`;
     case 'pct': return `<td class="r num ${cls(v)}">${v==null?'—':sign(v)+v.toFixed(2)}</td>`;
     case 'c0': return `<td class="r num ${cls(v)}">${n0(v)}</td>`;
     case 'c2': return `<td class="r num ${cls(v)}">${n2(v)}</td>`;
@@ -507,15 +513,14 @@ function renderChips(){
   Promise.all([window.MTXSheet.load(), loadMargin().catch(()=>null)]).then(([data,M])=>{
     const R=data.rows, L=R[R.length-1], P=R[R.length-2]||{};
     const MC=(M&&M.credit)||[], MR=(M&&M.ratio)||[], ME=(M&&M.etfs)||{};
-    const lastStrong=[...R].reverse().find(r=>sigOn(r.sigStrong));
-    const sigs=sigList(L);
+    const lastStrong=[...R].reverse().find(isStrong);
     const delta=k=>L[k]!=null&&P[k]!=null?L[k]-P[k]:null;
     const kpi=(label,val,sub)=>`<div class="kpi"><span>${label}</span><b class="num">${val}</b><em>${sub}</em></div>`;
     const ranges=[['1M',30],['3M',91],['6M',182],['1Y',365],['3Y',1095],['全部',0]];   // 日曆天
     const back=n=>new Date((dayNumOf(L.date)-n)*864e5).toISOString().slice(0,10);
     const first=R[0].date, last=L.date;
     const ecodes=Object.keys(ME);
-    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空','多單紅・空單綠（口）'],
+    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）'],
       ...(MR.length?[['大盤融資維持率','上市扣除 ETF・玩股網・虛線＝130%']]:[]),
       ...(MC.length?[['融資餘額','上市紅・上櫃黃（億）'],['融券餘額','上市紅・上櫃黃（張）'],['正二 ETF 融資餘額',`${ecodes.map((c,i)=>`${c} ${['紅','黃'][i]||''}`).join('・')}（張）`]]:[])];
     main.innerHTML = `
@@ -529,14 +534,14 @@ function renderChips(){
           <div><span>成交量</span><b>${n0(L.vol)} 億</b></div>
           <div><span>外資現貨</span><b class="${cls(L.fiSpot)}">${sign(L.fiSpot)}${n2(L.fiSpot)} 億</b></div>
         </div>
-        <div class="sigs"><span class="sigs-h">今日訊號</span>${sigs.length?sigs.map(t=>`<span class="pill r">${t}</span>`).join(''):'<span class="pill">無落底訊號</span>'}
+        <div class="sigs"><span class="sigs-h">今日訊號</span>${sigPills(L)}
           ${lastStrong?`<span class="sigs-last">最近一次強烈落底：<b class="num">${lastStrong.date.replace(/-/g,'/')}</b>・<a href="signals.html#strong" style="color:#93C5FD">看訊號回測 →</a></span>`:''}</div>
       </div>
       <div class="card" style="margin-top:12px"><div class="kpis k4">
         ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`前日增減 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
         ${kpi('外資 BP 金額',n0(L.bp),`較前日 ${sgn0(delta('bp'))}・BP/SP 增幅比 ${L.bpsp==null?'—':L.bpsp.toFixed(1)+'%'}`)}
         ${kpi('外資 BC／SC 金額',`${n0(L.bc)}／${n0(L.sc)}`,`BC/SC 增幅比 ${L.bcsc==null?'—':L.bcsc.toFixed(1)+'%'}`)}
-        ${kpi('散戶多單／空單',`${n0(L.rtLong)}／${n0(L.rtShort)}`,`多單持倉百分位 ${pctTxt(L.rtLongPct)}・較前日 ${sgn0(delta('rtLong'))}`)}
+        ${kpi('微台多單／空單',`${n0(L.mxLong)}／${n0(L.mxShort)}`,`多單較前日 ${sgn0(delta('mxLong'))}・空單較前日 ${sgn0(delta('mxShort'))}`)}
       </div></div>
 
       <section class="sec" id="credit">
@@ -576,9 +581,9 @@ function renderChips(){
       const yr=range[0].slice(0,4)!==range[1].slice(0,4);
       const dt=d=>yr?d.replace(/-/g,'/'):md(d);
       $('#dtable').innerHTML=`<thead><tr><th>日期</th>${C.map(c=>`<th class="${c[2]==='sig'?'':'r'}">${c[1]}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(r=>`<tr${sigList(r).length?' class="sig"':''}><td class="num">${dt(r.date)}</td>${C.map(c=>cellHTML(r,c)).join('')}</tr>`).join('')}</tbody>`;
-      const ns=rows.filter(r=>sigList(r).length).length;
-      $('#tblSub').innerHTML=`${range[0].replace(/-/g,'/')} – ${range[1].replace(/-/g,'/')}・<b class="num">${rows.length}</b> 個交易日・有訊號 <b class="num">${ns}</b> 天・最新在最上面・紅底＝有落底訊號`;
+        <tbody>${rows.map(r=>`<tr${isStrong(r)?' class="sig"':''}><td class="num">${dt(r.date)}</td>${C.map(c=>cellHTML(r,c)).join('')}</tr>`).join('')}</tbody>`;
+      const ns=rows.filter(isStrong).length;
+      $('#tblSub').innerHTML=`${range[0].replace(/-/g,'/')} – ${range[1].replace(/-/g,'/')}・<b class="num">${rows.length}</b> 個交易日・強烈落底 <b class="num">${ns}</b> 天・最新在最上面・紅底＝強烈落底・訊號前的數字＝四項中滿足幾項`;
     };
     const syncChecks=()=>$('#colpick').querySelectorAll('input').forEach(x=>{ x.checked=cols.includes(x.value); });
     $('#colpick').addEventListener('change',e=>{ if(e.target.type!=='checkbox') return;
@@ -616,8 +621,8 @@ function renderChips(){
     let c=mk(0);
     const s0=c.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.25)',bottomColor:'rgba(96,165,250,.02)',lineWidth:2,priceFormat:{type:'price',precision:0,minMove:1}});
     s0.setData(R.map(r=>({time:T(r),value:r.idx})));
-    s0.setMarkers(R.filter(r=>sigOn(r.sigStrong)).map(r=>({time:T(r),position:'belowBar',color:UP,shape:'arrowUp'})));
-    legend(0,r=>`加權 <b>${n2(r.idx)}</b> <span class="${cls(r.chg)}">${sign(r.chg)}${n2(r.chg)}</span>${sigList(r).length?' ・<span class="up">'+sigList(r).join('、')+'</span>':''}`,c);
+    s0.setMarkers(R.filter(isStrong).map(r=>({time:T(r),position:'belowBar',color:UP,shape:'arrowUp'})));
+    legend(0,r=>`加權 <b>${n2(r.idx)}</b> <span class="${cls(r.chg)}">${sign(r.chg)}${n2(r.chg)}</span>${sigList(r).length?' ・<span class="up">'+sigList(r).join(' ／ ')+'</span>':''}`,c);
 
     c=mk(1);
     const s1=c.addHistogramSeries({priceFormat:{type:'volume'}});
@@ -629,8 +634,8 @@ function renderChips(){
     c=mk(2); lines(c,[['sc','#10B981'],['bc','#EF4444'],['bp','#A855F7']]);
     legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
 
-    c=mk(3); lines(c,[['rtShort','#10B981'],['rtLong','#EF4444']]);
-    legend(3,r=>`多 <b class="up">${n0(r.rtLong)}</b> 空 <b class="down">${n0(r.rtShort)}</b> 多單百分位 ${pctTxt(r.rtLongPct)}`,c);
+    c=mk(3); lines(c,[['mxShort','#10B981'],['mxLong','#EF4444']]);
+    legend(3,r=>`微台多 <b class="up">${n0(r.mxLong)}</b> 空 <b class="down">${n0(r.mxShort)}</b>`,c);
 
     /* ---- 信用交易歷史（data/margin.json）：和上面的圖共用日期區間 ---- */
     let pi=4;

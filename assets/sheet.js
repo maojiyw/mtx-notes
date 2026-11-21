@@ -8,7 +8,7 @@ window.MTXSheet = (function(){
   'use strict';
   const ID = '1J-vhV9ahpiZejIJ0pz565KBiptDfxJX3';
   const url = sheet => `https://docs.google.com/spreadsheets/d/${ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`;
-  const CACHE_KEY = 'mtx-sheet-v2', CACHE_MS = 10*60*1000;
+  const CACHE_KEY = 'mtx-sheet-v4', CACHE_MS = 10*60*1000;
 
   // 欄名（去掉空白後比對：先完全相同，再比對結尾）
   const MAIN = {
@@ -18,7 +18,8 @@ window.MTXSheet = (function(){
     mxLong:'微台看多', mxShort:'微台看空',
     sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sigAmp:'幅度', sigStrong:'強烈落底', sig3:'連續三天期貨逆增'
   };
-  const OPT = { bc:'外資BC金額', sc:'外資SC金額', bp:'外資BP金額', sp:'外資SP金額', bcsc:'外資BC/SC增幅比例', bpsp:'外資BP/SP增幅比例' };
+  const OPT = { bc:'外資BC金額', sc:'外資SC金額', bp:'外資BP金額', sp:'外資SP金額', bcsc:'外資BC/SC增幅比例', bpsp:'外資BP/SP增幅比例',
+    bpQty:'外資BP口數', spQty:'外資SP口數' };
   const FLAGS = ['sigSPQty','sigSPAmt','sigMicro','sigBoth','sigAmp','sigStrong','sig3'];
 
   function parseCSV(t){
@@ -48,6 +49,28 @@ window.MTXSheet = (function(){
   const date = v => { const m=String(v||'').trim().match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/); return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:null; };
   const flag = v => { const s=String(v||'').trim(); return s==='' ? null : s; };
 
+  /* 落底訊號（網站自行計算）：只在當日收跌時判斷，與前一個交易日比較
+     共同兩項：1. 外資期貨未平倉較前日增加 → 期貨逆增
+               2. SP 增幅（今日－前日）大於 BP 增幅，且 BP 也增加：口數、金額分別比較 → SP（口數／金額）、SP（口數）或 SP（金額）
+     第一組（微台，AO／AP 欄）：微台多單減少、微台加空
+     第二組（小+微，AS／AT 欄「散戶看多／看空」）：小+微多單減少、小+微加空
+     每組回傳 {n: 滿足項數, items: [顯示文字]}；四項全滿足＝強烈落底 */
+  function dropSignals(r,p){
+    if(!p||r.chg==null||r.chg>=0) return null;
+    const up=(a,b)=>a!=null&&b!=null&&a>b, inc=k=>r[k]!=null&&p[k]!=null?r[k]-p[k]:null;
+    const common=[];
+    if(up(r.fiOI,p.fiOI)) common.push('期貨逆增');
+    // 「增幅」＝兩者都較前日增加：SP 增幅 > BP 增幅 > 0（與試算表 AZ／BA 欄 2019 年以來逐日一致）
+    const spUp=(s,b)=>{ const ds=inc(s), db=inc(b); return ds!=null&&db!=null&&db>0&&ds>db; };
+    const q=spUp('spQty','bpQty'), a=spUp('sp','bp');
+    if(q||a) common.push(q&&a?'SP（口數／金額）':q?'SP（口數）':'SP（金額）');
+    const grp=(lk,sk,name)=>{ const items=common.slice();
+      if(up(p[lk],r[lk])) items.push(name+'多單減少');
+      if(up(r[sk],p[sk])) items.push(name+'加空');
+      return {n:items.length, items}; };
+    return [grp('mxLong','mxShort','微台'), grp('rtLong','rtShort','小+微')];
+  }
+
   function build(mainCSV, optCSV){
     const A=parseCSV(mainCSV), B=parseCSV(optCSV);
     const ca=colMap(A[0],MAIN), cb=colMap(B[0],OPT);
@@ -75,15 +98,17 @@ window.MTXSheet = (function(){
     return {rows, bpSeries, warnings, missing, fetchedAt:Date.now()};
   }
 
+  // 落底訊號在讀取後才計算（不存進快取），改規則不會被舊快取卡住
+  const withSignals = d => { d.rows.forEach((r,i)=>{ const g=dropSignals(r,d.rows[i-1]); r.g1=g&&g[0]; r.g2=g&&g[1]; }); return d; };
   let pending=null;
   function load(){
     if(pending) return pending;
-    try{ const c=JSON.parse(sessionStorage.getItem(CACHE_KEY)||'null'); if(c&&Date.now()-c.fetchedAt<CACHE_MS) return pending=Promise.resolve(c); }catch(e){}
+    try{ const c=JSON.parse(sessionStorage.getItem(CACHE_KEY)||'null'); if(c&&Date.now()-c.fetchedAt<CACHE_MS) return pending=Promise.resolve(withSignals(c)); }catch(e){}
     pending = Promise.all([fetch(url('工作表1')), fetch(url('Sheet1'))])
       .then(rs=>{ rs.forEach(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); }); return Promise.all(rs.map(r=>r.text())); })
       .then(([a,b])=>{ if(/^\s*</.test(a)) throw new Error('試算表無法公開讀取'); const d=build(a,b); if(!d.rows.length) throw new Error('沒有讀到資料');
         try{ sessionStorage.setItem(CACHE_KEY, JSON.stringify(d)); }catch(e){}
-        return d; })
+        return withSignals(d); })
       .catch(e=>{ pending=null; throw e; });
     return pending;
   }
@@ -93,7 +118,8 @@ window.MTXSheet = (function(){
     const R=d.rows, T=bpRedLine(d.bpSeries||[]); let j=-1;
     // 每列日期對應當天以前最近一筆的紅燈門檻
     const thr=R.map(r=>{ while(j+1<T.length&&T[j+1].date<=r.date) j++; return j<0?null:T[j].thr; });
-    return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), fiBPThr:thr, rtLong:R.map(r=>r.rtLong), rtPct:R.map(r=>r.rtLongPct) };
+    // 散戶多單＝微台（AO 欄）；持倉百分位只有小+微
+    return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), fiBPThr:thr, rtLong:R.map(r=>r.mxLong), rtPct:R.map(r=>r.rtLongPct), micro:true };
   }
   /* BP紅燈（歷史前 2%）逐日門檻：當天以前（含當天）所有 BP 由大到小第 k 大，k＝max(1, floor(筆數×2%))；與 backtest.js 相同
      回傳 [{date, bp, thr}]，依日期排序 */
