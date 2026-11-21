@@ -90,8 +90,19 @@ window.MTXSheet = (function(){
 
   /* 給籌碼小圖用：轉成和 data.js 的 chips 相同的格式 */
   function asChips(d){
-    const R=d.rows;
-    return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), rtLong:R.map(r=>r.rtLong), rtPct:R.map(r=>r.rtLongPct) };
+    const R=d.rows, T=bpRedLine(d.bpSeries||[]); let j=-1;
+    // 每列日期對應當天以前最近一筆的紅燈門檻
+    const thr=R.map(r=>{ while(j+1<T.length&&T[j+1].date<=r.date) j++; return j<0?null:T[j].thr; });
+    return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), fiBPThr:thr, rtLong:R.map(r=>r.rtLong), rtPct:R.map(r=>r.rtLongPct) };
   }
-  return { load, asChips, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
+  /* BP紅燈（歷史前 2%）逐日門檻：當天以前（含當天）所有 BP 由大到小第 k 大，k＝max(1, floor(筆數×2%))；與 backtest.js 相同
+     回傳 [{date, bp, thr}]，依日期排序 */
+  function bpRedLine(S){
+    const sorted=[];
+    return S.map((s,t)=>{
+      const v=s.bp; let a=0,b=sorted.length; while(a<b){ const m=(a+b)>>1; if(sorted[m]>v) a=m+1; else b=m; } sorted.splice(a,0,v);
+      return {date:s.date, bp:v, thr:sorted[Math.max(1,Math.floor((t+1)*0.02))-1]};
+    });
+  }
+  return { load, asChips, bpRedLine, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
 })();
