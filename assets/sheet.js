@@ -130,5 +130,11 @@ window.MTXSheet = (function(){
       return {date:s.date, bp:v, thr:sorted[Math.max(1,Math.floor((t+1)*0.02))-1]};
     });
   }
-  return { load, asChips, bpRedLine, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
+  /* BP紅燈亮燈首日：BP ≥ 當天門檻（2012 起），距離上一個亮燈日滿 10 個交易日才算新的一次；與 backtest.js 相同 */
+  function bpRedDays(S){
+    const out=[]; let last=-1e9;
+    bpRedLine(S).forEach((x,t)=>{ if(x.date<'2012-01-01'||x.bp<x.thr) return; if(t-last>=10) out.push(x.date); last=t; });
+    return out;
+  }
+  return { load, asChips, bpRedLine, bpRedDays, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
 })();
