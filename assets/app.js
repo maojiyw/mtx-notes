@@ -233,6 +233,25 @@ function campaignLive(lo,peakIntra){
     kb.innerHTML=`<span>外資 BP 峰值（${md(peak.date)}）</span><b class="num" style="color:#C084FC">${yi(peak.bp)}</b><em>紅燈約 ${yi(thr)}，${lit?md(lit.date)+' 觸發':'未觸發'}</em>`;
   }).catch(()=>{});
 }
+/* 主頁每日短評：讀試算表工作表1「每日短評」欄，預設顯示最近 5 則，可展開更早的 */
+function dailyNotes(){
+  const S=window.MTXSheet, box=$('#notes'), sec=$('#notesSec'); if(!S||!box||!sec) return;
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  S.load().then(d=>{
+    const N=d.rows.filter(r=>r.note).reverse(); if(!N.length) return;
+    const SHOW=5; let all=false;
+    const item=(r,i)=>`<div class="card nitem${i===0?' latest':''}">
+        <div class="d"><b>${r.date.replace(/-/g,'/')}</b><em>${weekday(r.date)}</em><span class="num ${cls(r.chg)}">${fmt(r.idx)}　${sign(r.pct)}${r.pct==null?'—':r.pct.toFixed(2)}%</span></div>
+        <p>${esc(r.note)}</p></div>`;
+    const draw=()=>{
+      const list=all?N:N.slice(0,SHOW);
+      box.innerHTML=list.map(item).join('')+(N.length>SHOW?`<button class="nmore" type="button">${all?'收起，只看最近 '+SHOW+' 則':'看更早的短評（共 '+N.length+' 則）'}</button>`:'');
+      const b=box.querySelector('.nmore'); if(b) b.onclick=()=>{ all=!all; draw(); };
+    };
+    $('#notesCount').textContent=`最新在最上面・最近更新 ${N[0].date.replace(/-/g,'/')}`;
+    sec.hidden=false; draw();
+  }).catch(()=>{});
+}
 function renderHome(){
   nav(null);
   const latest=D.reviews[0], last=DAILY[DAILY.length-1];
@@ -255,6 +274,7 @@ function renderHome(){
     <div class="card hero-main feat feat-chips" id="daily"><div class="feat-tag"><i class="live"></i>每日籌碼<span>每日更新</span></div><p class="loading">讀取試算表中…</p></div>`;
   dailyCard($('#daily'));
   setTimeout(()=>campaignLive(lo,peakIntra));
+  setTimeout(dailyNotes);
   $('#campaign').innerHTML = `<div class="card"><div class="kpis k6">
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
