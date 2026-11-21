@@ -87,10 +87,30 @@ function baseChart(el,extra){
     layout:{background:{type:'solid',color:'#151A23'},textColor:'#8A94A7',fontSize:11,fontFamily:"'JetBrains Mono',monospace"},
     grid:{vertLines:{visible:false},horzLines:{color:'rgba(35,43,58,.6)'}},
     rightPriceScale:{borderColor:'#232B3A'},
-    timeScale:{borderColor:'#232B3A',fixLeftEdge:true,fixRightEdge:true},
+    timeScale:{borderColor:'#232B3A',fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.05},
     crosshair:{mode:LightweightCharts.CrosshairMode.Magnet,vertLine:{color:'#5D677B',labelBackgroundColor:'#2E3850'},horzLine:{color:'#5D677B',labelBackgroundColor:'#2E3850'}},
-    handleScroll:false,handleScale:false,localization:{locale:'zh-TW'}
+    // 全站圖表：滑鼠滾輪放大縮小、按住拖曳左右移動；手機兩指縮放、左右滑動（上下滑仍捲動頁面）
+    handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+    handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:false},axisDoubleClickReset:false},
+    localization:{locale:'zh-TW'}
   },extra||{}));
+}
+/* 多張圖共用時間軸：任一張被縮放或拖曳，其他張跟著同步；onChange 收到目前顯示的起訖日期 */
+const timeStr = t => typeof t==='string'?t:(t&&t.year?`${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`:null);
+function syncCharts(charts,onChange){
+  let lastKey='', lastAt=0, active=null, t=0;
+  const apply=(from,to,except)=>{ lastKey=from+'|'+to; lastAt=Date.now(); charts.forEach(c=>{ if(c!==except) try{ c.timeScale().setVisibleRange({from,to}); }catch(e){} }); };
+  // 記住使用者正在操作哪一張圖，其他張被同步時發出的變動不再往回傳（避免來回震盪）
+  charts.forEach(c=>{ const el=c.chartElement&&c.chartElement(); if(el) ['pointerdown','wheel','touchstart'].forEach(ev=>el.addEventListener(ev,()=>{ active=c; },{passive:true})); });
+  charts.forEach(src=>src.timeScale().subscribeVisibleTimeRangeChange(r=>{
+    if(!r) return; const from=timeStr(r.from), to=timeStr(r.to), key=from+'|'+to;
+    if(key===lastKey) return;
+    // 只有使用者正在操作的那張圖會帶動其他圖；程式設定或資料較短的圖回報的範圍不往回傳
+    if(src!==active) return;
+    apply(from,to,src);
+    if(onChange){ clearTimeout(t); t=setTimeout(()=>onChange(from,to),250); }
+  }));
+  return { set:(from,to)=>{ active=null; apply(from,to,null); } };   // 按鈕或日期欄位設定的區間：不算使用者在圖上操作
 }
 function indexChart(el,legendEl,{markers=[],highlight=null,clickable=false}={}){
   if(!window.LightweightCharts){ el.innerHTML='<p style="padding:20px;color:#8A94A7">圖表載入失敗（需要網路連線）</p>'; return; }
@@ -126,7 +146,11 @@ function chipCharts(ids,C,{end=null,days=90}={}){
   if(!empty(ids[1],C.fiBP)){
     const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
     h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
-    h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'}); c2.timeScale().fitContent();
+    // BP紅燈門檻：試算表資料用逐日滾動門檻（歷史前 2%）；退回筆記數字時用筆記的 3.64 億
+    if(C.fiBPThr){ const l2=c2.addLineSeries({color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈',priceLineVisible:false,crosshairMarkerVisible:false,priceFormat:{type:'volume'}});
+      l2.setData(pick(C.fiBPThr).map(x=>({time:x.time,value:x.v}))); }
+    else h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'});
+    c2.timeScale().fitContent();
   }
   const sub3=$(ids[2]+'s'); if(sub3) sub3.textContent=C.micro?'柱＝微台多單（口）・線＝小+微持倉百分位':'柱＝口數・線＝持倉比';
   if(!empty(ids[2],C.rtLong)){
@@ -186,6 +210,29 @@ function dailyCard(el){
     el.innerHTML = head + `<p style="color:var(--muted);margin-top:10px">暫時讀不到籌碼試算表，請稍後再試。</p><div class="ctas"><a class="cta amber" href="chips.html">前往每日籌碼 →</a></div>`;
   });
 }
+/* 主頁波段 KPI：最新收盤與外資 BP 峰值改用每日籌碼試算表（讀不到時保留 data.js 的數字）
+   BP 峰值＝前高日以後的最大 BP；紅燈門檻＝BP紅燈（歷史前 2%）定義，與 backtest.js 相同 */
+function campaignLive(lo,peakIntra){
+  const S=window.MTXSheet; if(!S) return;
+  S.load().then(d=>{
+    const L=d.rows[d.rows.length-1], kl=$('#kpiLast');
+    if(kl&&L&&L.idx!=null){
+      const rec=(L.idx-lo)/(peakIntra-lo)*100;
+      const sub=L.idx<lo?`已跌破波段低點 ${((L.idx/lo-1)*100).toFixed(2)}%`:`已收復約 ${rec.toFixed(0)}% 跌幅`;
+      kl.innerHTML=`<span>最新收盤（${md(L.date)}）</span><b class="num ${cls(L.chg)}">${fmt(L.idx)}</b><em>${sub}</em>`;
+    }
+    const B=d.bpSeries||[], kb=$('#kpiBP'); if(!kb||!B.length) return;
+    const from=D.campaign.high.date, T=S.bpRedLine(B), thr=T[T.length-1].thr; let peak=null, lit=null;
+    T.forEach(s=>{
+      if(s.date<from) return;
+      if(!peak||s.bp>peak.bp) peak=s;
+      if(!lit&&s.bp>=s.thr) lit=s;
+    });
+    if(!peak) return;
+    const yi=v=>(v/1e6).toFixed(2)+' 億';
+    kb.innerHTML=`<span>外資 BP 峰值（${md(peak.date)}）</span><b class="num" style="color:#C084FC">${yi(peak.bp)}</b><em>紅燈約 ${yi(thr)}，${lit?md(lit.date)+' 觸發':'未觸發'}</em>`;
+  }).catch(()=>{});
+}
 function renderHome(){
   nav(null);
   const latest=D.reviews[0], last=DAILY[DAILY.length-1];
@@ -207,12 +254,13 @@ function renderHome(){
     </div>
     <div class="card hero-main feat feat-chips" id="daily"><div class="feat-tag"><i class="live"></i>每日籌碼<span>每日更新</span></div><p class="loading">讀取試算表中…</p></div>`;
   dailyCard($('#daily'));
+  setTimeout(()=>campaignLive(lo,peakIntra));
   $('#campaign').innerHTML = `<div class="card"><div class="kpis k6">
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
-      <div class="kpi"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
-      <div class="kpi"><span>目前部位</span><b class="num">${latest.position}</b><em>11/2 以 1.68 倍進場</em></div>
-      <div class="kpi"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">3.25 億</b><em>紅燈約 3.64 億，未觸發</em></div>
+      <div class="kpi" id="kpiLast"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
+      <div class="kpi"><span>目前部位</span><b class="num">${latest.position}</b>${latest.positionNote?`<em>${latest.positionNote}</em>`:''}</div>
+      <div class="kpi" id="kpiBP"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">3.25 億</b><em>紅燈約 3.64 億，未觸發</em></div>
       <div class="kpi"><span>復盤篇數</span><b class="num">${D.reviews.length} 篇</b><em>${md(D.reviews[D.reviews.length-1].date)} – ${md(latest.date)}</em></div>
     </div></div>`;
 
@@ -231,6 +279,121 @@ function renderHome(){
   $('#timeline').innerHTML = D.campaign.timeline.map(x=>`<div class="tl" style="--c:${x.c}"><b>${x.d}</b><em>${x.v}</em><span>${x.t}</span></div>`).join('');
   $('#chips').innerHTML = chipCardsHTML('hc');
   withChips(['#hc1','#hc2','#hc3'],{days:90},$('#chipsNote'));
+}
+
+/* =====================================================================
+   信用交易（data/margin.json，GitHub Actions 每晚 21:30 更新）
+   - 大盤融資維持率（上市扣除 ETF）：玩股網
+   - 每日信用交易統計：證交所、櫃買中心；指定 ETF 的融資融券張數
+   ===================================================================== */
+const sgnN = (v,d=0) => v==null?'—':`${v>0?'+':''}${fmt(v,d)}`;
+const chgWord = (v,unit,d=0,kind='資') => v==null?'—':`<span class="${cls(v)}">${kind}${v>0?'增':v<0?'減':'平'} <b class="num">${fmt(Math.abs(v),d)}</b> ${unit}</span>`;
+// 連續增減：回傳每一天的連續天數（正＝連增、負＝連減、0＝持平）
+function streaks(vals){
+  const out=[]; vals.forEach((v,i)=>{ const s=v>0?1:v<0?-1:0, p=i?out[i-1]:0;
+    out.push(s===0?0:(Math.sign(p)===s?p+s:s)); }); return out;
+}
+const streakTxt = s => !s?'':`<span class="streak ${s>0?'up':'down'}">連${Math.abs(s)}${s>0?'增':'減'}</span>`;
+// 歷史統計：最長連增、最長連減（含起訖日期）
+function streakStats(dates,vals){
+  const st=streaks(vals); let up={n:0}, dn={n:0};
+  st.forEach((s,i)=>{ if(s>up.n) up={n:s,end:dates[i],start:dates[i-s+1]}; if(-s>dn.n) dn={n:-s,end:dates[i],start:dates[i+s+1]}; });
+  return {cur:st[st.length-1]||0, up, dn};
+}
+
+const loadMargin = () => fetch(base+'data/margin.json',{cache:'no-cache'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
+// 顯示在每日籌碼頁；回傳 setRange(from,to)，讓每日明細跟著頁面的日期區間
+function renderCredit(M,body,noteEl){
+  {
+    const R=M.ratio||[], C=M.credit||[], E=M.etfs||{};
+    const codes=Object.keys(E);
+    if(noteEl) noteEl.textContent=`資料更新：${M.updated||'—'}・每個交易日晚上 21:30 自動更新`;
+
+    /* ---- 維持率 ---- */
+    const r1=R[R.length-1], r0=R[R.length-2];
+    const ratioCard = r1 ? `
+      <div class="card"><div class="card-h"><span>大盤融資維持率（上市扣除 ETF）</span><span class="sub">${r1[0].replace(/-/g,'/')}</span></div>
+        <div class="dgrid keys cr-k">
+          <div><span>融資維持率</span><b class="num ${r1[1]<140?'pend':''}">${r1[1].toFixed(2)}%</b><em>${r0?`前一日 ${r0[1].toFixed(2)}%（${sgnN(+(r1[1]-r0[1]).toFixed(2),2)}）`:''}${r1[1]<130?'・<span class="pend">低於 130% 追繳線</span>':''}</em></div>
+          <div><span>融資餘額（扣除 ETF）</span><b class="num">${fmt(r1[2])} 億</b><em>${r0?`較前日 <span class="${cls(r1[2]-r0[2])}">${sgnN(+(r1[2]-r0[2]).toFixed(2),2)} 億</span>`:''}</em></div>
+        </div>
+        <div class="tabs cr-rng" id="crRange">${[['3M',91],['6M',182],['1Y',365],['全部',0]].map(([t,n])=>`<button data-n="${n}"${n===365?' class="on"':''}>${t}</button>`).join('')}</div>
+        <div class="chart cr-chart"><div class="chart-legend num" id="crLg"></div><div id="crChart" style="position:absolute;inset:0"></div></div>
+        <div class="chart-note">虛線＝130%（一般追繳線）。資料來源：<a href="https://www.wantgoo.com/stock/margin-trading/exclude-etf/taiex" target="_blank" rel="noopener">玩股網・扣除 ETF 資券進出</a>，維持率由玩股網計算。</div>
+      </div>` : `<div class="card"><p class="empty">暫時沒有維持率資料。</p></div>`;
+
+    /* ---- 每日信用交易統計 ---- */
+    const c1=C[C.length-1];
+    const col=k=>C.map(c=>k(c));
+    const etfSeries=code=>col(c=>c.etf&&c.etf[code]?c.etf[code].loanChg:null);
+    const etfSt={}; codes.forEach(code=>{ etfSt[code]=streaks(etfSeries(code).map(v=>v||0)); });
+    const twSt=streaks(col(c=>c.twse?c.twse.loanChg:0)), tpSt=streaks(col(c=>c.tpex?c.tpex.loanChg:0));
+    const L=C.length-1;
+    const block=(title,o,st,unitLoan,d)=>o?`<div class="cr-row"><b>${title}</b><span>${chgWord(o.loanChg,unitLoan,d)} ${streakTxt(st)}</span><span>${chgWord(o.shortChg,'張',0,'券')}</span></div>`:'';
+    const dayCard = c1 ? `
+      <div class="card"><div class="card-h"><span>每日信用交易統計</span><span class="sub">${c1.d.replace(/-/g,'/')}（${weekday(c1.d)}）</span></div>
+        <div class="cr-day">
+          ${block('上市',c1.twse,twSt[L],'億',2)}
+          ${block('上櫃',c1.tpex,tpSt[L],'億',2)}
+          ${codes.map(code=>block(`${code} <small>${E[code]}</small>`,c1.etf&&c1.etf[code],etfSt[code][L],'張',0)).join('')}
+        </div>
+        <div class="chart-note">上市＝證交所全部（含 ETF）融資金額、融券張數；上櫃＝櫃買中心。資增減＝今日餘額－前日餘額。</div>
+      </div>` : `<div class="card"><p class="empty">暫時沒有信用交易資料。</p></div>`;
+
+    /* ---- 歷史統計 ---- */
+    const dates=col(c=>c.d);
+    const statRows=[['上市融資（億）',col(c=>c.twse?c.twse.loanChg:null),2],['上櫃融資（億）',col(c=>c.tpex?c.tpex.loanChg:null),2],
+      ...codes.map(code=>[`${code} 融資（張）`,etfSeries(code),0])];
+    const sumN=(v,n)=>v.slice(-n).reduce((s,x)=>s+(x||0),0);
+    const rng=s=>s.n?`<b class="num">${s.n}</b> 天<em>${s.start.replace(/-/g,"/")}–${s.start.slice(0,4)===s.end.slice(0,4)?md(s.end):s.end.replace(/-/g,"/")}</em>`:'—';
+    const statTable = `
+      <div class="tbl"><div class="tbl-h">歷史統計（${dates[0].replace(/-/g,'/')} 起，共 ${C.length} 個交易日）</div><div class="tscroll noterm"><table class="t cr-t">
+        <thead><tr><th>項目</th><th class="r">目前</th><th class="r">近 5 日合計</th><th class="r">近 20 日合計</th><th class="r">最長連增</th><th class="r">最長連減</th></tr></thead>
+        <tbody>${statRows.map(([t,v,d])=>{ const s=streakStats(dates,v.map(x=>x||0)); const a=sumN(v,5), b=sumN(v,20);
+          return `<tr><td>${t}</td><td class="r">${streakTxt(s.cur)||'—'}</td><td class="r num ${cls(a)}">${sgnN(+a.toFixed(d),d)}</td><td class="r num ${cls(b)}">${sgnN(+b.toFixed(d),d)}</td><td class="r cr-rng2">${rng(s.up)}</td><td class="r cr-rng2">${rng(s.dn)}</td></tr>`; }).join('')}</tbody>
+      </table></div><div class="tbl-n">最長連增／連減只計算網站已收錄的期間。</div></div>`;
+
+    /* ---- 每日明細：跟著頁面的日期區間 ---- */
+    const cell=(v,d)=>`<td class="r num ${cls(v)}">${sgnN(v==null?null:+v.toFixed(d),d)}</td>`;
+    const detail = `
+      <details class="tbl cr-detail" id="crDetail"><summary class="tbl-h" id="crDetailH">每日明細</summary><div class="tscroll tall noterm"><table class="t cr-t">
+        <thead><tr><th>日期</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${code} 資(張)</th><th class="r">連續</th><th class="r">${code} 券(張)</th>`).join('')}</tr></thead>
+        <tbody id="crRows"></tbody>
+      </table></div></details>`;
+    const MAXROWS=400;
+    const setRange=(from,to)=>{
+      const rows=C.map((c,i)=>({c,i})).filter(({c})=>c.d>=from&&c.d<=to).reverse();
+      const yr=from.slice(0,4)!==to.slice(0,4), dd=d=>yr?d.replace(/-/g,'/'):md(d);
+      const tb=$('#crRows'), hd=$('#crDetailH'); if(!tb) return;
+      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>${cell(e&&e.shortChg,0)}`; }).join('')}</tr>`).join('');
+      hd.textContent=`每日明細（${from.replace(/-/g,'/')} – ${to.replace(/-/g,'/')}・${rows.length} 個交易日${rows.length>MAXROWS?`，顯示最近 ${MAXROWS} 天`:''}）`;
+    };
+
+    body.innerHTML=`<div class="grid2 cr-grid">${ratioCard}${dayCard}</div>${C.length?statTable+detail:''}`;
+
+    /* ---- 維持率走勢圖 ---- */
+    if(r1&&window.LightweightCharts){
+      const ch=baseChart($('#crChart'));
+      const s=ch.addLineSeries({color:'#60A5FA',lineWidth:2,priceFormat:{type:'custom',formatter:v=>v.toFixed(0)+'%'}});
+      s.setData(R.map(x=>({time:x[0],value:x[1]})));
+      s.createPriceLine({price:130,color:UP,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'130%'});
+      const byD=new Map(R.map(x=>[x[0],x]));
+      const lg=$('#crLg'), show=t=>{ const x=byD.get(t)||r1; lg.innerHTML=`<b>${x[0].replace(/-/g,'/')}</b> 維持率 <b>${x[1].toFixed(2)}%</b>・融資 ${fmt(x[2])} 億`; };
+      show(); ch.subscribeCrosshairMove(p=>show(p&&p.time));
+      const last=R[R.length-1][0];
+      const setN=n=>{ const from=n?new Date((dayNumOf(last)-n)*864e5).toISOString().slice(0,10):R[0][0];
+        ch.timeScale().setVisibleRange({from:from<R[0][0]?R[0][0]:from,to:last});
+        $('#crRange').querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.n===n)); };
+      let cur=365; $('#crRange').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ cur=+b.dataset.n; setN(cur); } });
+      // 圖表量到寬度後才能正確套用區間
+      let sized=false;
+      if(window.ResizeObserver) new ResizeObserver(()=>{ if(!sized&&$('#crChart').clientWidth){ sized=true; setTimeout(()=>setN(cur),0); } }).observe($('#crChart'));
+      setTimeout(()=>setN(cur),50);
+      $('#crChart').addEventListener('wheel',()=>$('#crRange').querySelectorAll('button').forEach(b=>b.classList.remove('on')),{passive:true});
+      $('#crChart').addEventListener('pointerdown',()=>$('#crRange').querySelectorAll('button').forEach(b=>b.classList.remove('on')));
+    }
+    return { setRange };
+  }
 }
 
 /* =====================================================================
@@ -347,15 +510,19 @@ function cellHTML(r,[k,,f]){
 function renderChips(){
   nav('chips');
   const main=$('#main');
-  window.MTXSheet.load().then(data=>{
+  Promise.all([window.MTXSheet.load(), loadMargin().catch(()=>null)]).then(([data,M])=>{
     const R=data.rows, L=R[R.length-1], P=R[R.length-2]||{};
+    const MC=(M&&M.credit)||[], MR=(M&&M.ratio)||[], ME=(M&&M.etfs)||{};
     const lastStrong=[...R].reverse().find(isStrong);
     const delta=k=>L[k]!=null&&P[k]!=null?L[k]-P[k]:null;
     const kpi=(label,val,sub)=>`<div class="kpi"><span>${label}</span><b class="num">${val}</b><em>${sub}</em></div>`;
     const ranges=[['1M',30],['3M',91],['6M',182],['1Y',365],['3Y',1095],['全部',0]];   // 日曆天
     const back=n=>new Date((dayNumOf(L.date)-n)*864e5).toISOString().slice(0,10);
     const first=R[0].date, last=L.date;
-    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）']];
+    const ecodes=Object.keys(ME);
+    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）'],
+      ...(MR.length?[['大盤融資維持率','上市扣除 ETF・玩股網・虛線＝130%']]:[]),
+      ...(MC.length?[['融資餘額','上市紅・上櫃黃（億）'],['融券餘額','上市紅・上櫃黃（張）'],['正二 ETF 融資餘額',`${ecodes.map((c,i)=>`${c} ${['紅','黃'][i]||''}`).join('・')}（張）`]]:[])];
     main.innerHTML = `
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>每日籌碼</span></div>
       <div class="card r-head">
@@ -376,6 +543,11 @@ function renderChips(){
         ${kpi('外資 BC／SC 金額',`${n0(L.bc)}／${n0(L.sc)}`,`BC/SC 增幅比 ${L.bcsc==null?'—':L.bcsc.toFixed(1)+'%'}`)}
         ${kpi('微台多單／空單',`${n0(L.mxLong)}／${n0(L.mxShort)}`,`多單較前日 ${sgn0(delta('mxLong'))}・空單較前日 ${sgn0(delta('mxShort'))}`)}
       </div></div>
+
+      <section class="sec" id="credit">
+        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 21:30 自動更新</p></div>
+        <div id="creditBody">${M?'':'<div class="card"><p class="empty">讀不到信用交易資料。</p></div>'}</div>
+      </section>
 
       <section class="sec">
         <div class="sec-h"><h2>籌碼走勢</h2><p>日期區間同時套用到走勢圖與下方明細</p></div>
@@ -420,15 +592,19 @@ function renderChips(){
       cols=a==='all'?COLS.map(c=>c[0]):colsDefault(); colsSave(cols); syncChecks(); drawTable(); });
     syncChecks();
 
-    const charts=[], legends=[];
+    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote')) : null;
+    const charts=[], legends=[]; let sync=null;
     const clamp=d=>d<first?first:d>last?last:d;
-    const applyRange=(from,to,preset)=>{
-      from=clamp(from||first); to=clamp(to||last); if(from>to) [from,to]=[to,from];
+    // 日期區間：按鈕、起訖日期，或直接在任一張圖上滾輪縮放、拖曳，都會同步到所有圖、明細表、信用交易明細
+    const showRange=(from,to,preset)=>{
       range=[from,to]; dFrom.value=from; dTo.value=to;
       [...$('#range').children].forEach(b=>b.classList.toggle('on',b.dataset.n===String(preset)));
-      charts.forEach(ch=>ch.timeScale().setVisibleRange({from,to}));
-      legends.forEach(f=>f());
-      drawTable();
+      legends.forEach(f=>f()); drawTable(); if(credit) credit.setRange(from,to);
+    };
+    const applyRange=(from,to,preset)=>{
+      from=clamp(from||first); to=clamp(to||last); if(from>to) [from,to]=[to,from];
+      if(sync) sync.set(from,to);
+      showRange(from,to,preset);
     };
     const byN=n=>applyRange(n?back(n):first,last,n);
     $('#range').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) byN(+b.dataset.n); });
@@ -461,7 +637,34 @@ function renderChips(){
     c=mk(3); lines(c,[['mxShort','#10B981'],['mxLong','#EF4444']]);
     legend(3,r=>`微台多 <b class="up">${n0(r.mxLong)}</b> 空 <b class="down">${n0(r.mxShort)}</b>`,c);
 
+    /* ---- 信用交易歷史（data/margin.json）：和上面的圖共用日期區間 ---- */
+    let pi=4;
+    const mLegend=(i,c,rows,fn)=>{ const el=$('#lg'+i), by=new Map(rows.map(x=>[x.d,x]));
+      const at=t=>{ if(t&&by.has(t)) return by.get(t); for(let k=rows.length-1;k>=0;k--) if(rows[k].d<=range[1]) return rows[k]; return rows[rows.length-1]; };
+      const show=t=>{ const x=at(t); if(x) el.innerHTML=`<b>${x.d.replace(/-/g,'/')}</b> `+fn(x); }; show(); c.subscribeCrosshairMove(p=>show(p&&timeStr(p.time))); legends.push(show); };
+    const mLine=(c,rows,get,color,fmtFn)=>{ const s=c.addLineSeries({color,lineWidth:2,lastValueVisible:false,priceLineVisible:false,priceFormat:fmtFn?{type:'custom',formatter:fmtFn}:{type:'volume'}});
+      s.setData(rows.map(x=>({time:x.d,value:get(x)})).filter(p=>p.value!=null)); return s; };
+    if(MR.length){
+      const rows=MR.map(x=>({d:x[0],r:x[1],b:x[2]}));
+      c=mk(pi); const s=mLine(c,rows,x=>x.r,'#60A5FA',v=>v.toFixed(0)+'%');
+      s.createPriceLine({price:130,color:UP,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'130%'});
+      mLegend(pi,c,rows,x=>`維持率 <b class="${x.r<130?'pend':''}">${x.r.toFixed(2)}%</b>・融資（扣除 ETF）${fmt(x.b)} 億`); pi++;
+    }
+    if(MC.length){
+      const g=(x,a,b)=>x[a]?x[a][b]:null;
+      c=mk(pi); mLine(c,MC,x=>g(x,'twse','loan'),'#EF4444'); mLine(c,MC,x=>g(x,'tpex','loan'),'#F59E0B');
+      mLegend(pi,c,MC,x=>`上市 <b>${fmt(g(x,'twse','loan'))}</b> 億 <span class="${cls(g(x,'twse','loanChg'))}">${sgnN(g(x,'twse','loanChg'),2)}</span>・上櫃 <b>${fmt(g(x,'tpex','loan'))}</b> 億 <span class="${cls(g(x,'tpex','loanChg'))}">${sgnN(g(x,'tpex','loanChg'),2)}</span>`); pi++;
+      c=mk(pi); mLine(c,MC,x=>g(x,'twse','short'),'#EF4444'); mLine(c,MC,x=>g(x,'tpex','short'),'#F59E0B');
+      mLegend(pi,c,MC,x=>`上市 <b>${n0(g(x,'twse','short'))}</b> 張 <span class="${cls(g(x,'twse','shortChg'))}">${sgnN(g(x,'twse','shortChg'))}</span>・上櫃 <b>${n0(g(x,'tpex','short'))}</b> 張 <span class="${cls(g(x,'tpex','shortChg'))}">${sgnN(g(x,'tpex','shortChg'))}</span>`); pi++;
+      c=mk(pi); ecodes.forEach((code,k)=>mLine(c,MC,x=>x.etf&&x.etf[code]?x.etf[code].loan:null,['#EF4444','#F59E0B','#A855F7'][k]||'#60A5FA'));
+      mLegend(pi,c,MC,x=>ecodes.map(code=>{ const e=x.etf&&x.etf[code]; return e?`${code} <b>${n0(e.loan)}</b> 張 <span class="${cls(e.loanChg)}">${sgnN(e.loanChg)}</span>`:`${code} —`; }).join('・')); pi++;
+    }
+
+    sync=syncCharts(charts,(from,to)=>showRange(from<first?first:from,to>last?last:to,null));
     byN(182);
+    // 圖表剛建立時還量不到寬度，第一次設定的區間可能失效；量到寬度後再套用一次
+    const ro=window.ResizeObserver&&new ResizeObserver(()=>{ if($('#ch0').clientWidth){ ro.disconnect(); setTimeout(()=>sync.set(range[0],range[1]),0); } });
+    if(ro) ro.observe($('#ch0')); setTimeout(()=>sync.set(range[0],range[1]),120);
   }).catch(err=>{
     main.innerHTML=`<div class="card r-head"><h1>每日籌碼</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
   });

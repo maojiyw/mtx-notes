@@ -427,3 +427,37 @@ table.t.bt tr.flash td{animation:btflash 1.6s ease-out}
   .bt-dates{order:3;width:100%}
   .bt-dates input{flex:1;min-width:0}
 }
+
+/* ---------- 信用交易（主頁） ---------- */
+.pend{color:var(--amber)}
+.cr-grid{align-items:stretch}
+.cr-grid > .card{display:flex;flex-direction:column}
+.cr-grid .cr-day{flex:1}
+.cr-grid .cr-row{flex:1;align-items:center}
+.cr-grid .cr-chart{flex:1;min-height:220px}
+.cr-k{margin:0;border:0;border-radius:0;border-bottom:1px solid var(--line)}
+.cr-k b{font-size:22px}
+.cr-rng{margin:10px 12px 0;width:max-content}
+.cr-chart{height:240px}
+.chart-note a{color:#93C5FD}
+.cr-day{display:flex;flex-direction:column}
+.cr-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.4fr) minmax(0,1fr);gap:8px;align-items:baseline;padding:11px 16px;border-bottom:1px solid var(--line);font-size:14px}
+.cr-row:last-child{border-bottom:0}
+.cr-row > b{font-weight:600;color:var(--text)}
+.cr-row small{display:block;font-size:11.5px;color:var(--muted);font-weight:400}
+.cr-row b.num{font-size:15px;color:inherit}
+.streak{display:inline-block;font-size:11px;padding:0 6px;border-radius:5px;margin-left:4px;border:1px solid currentColor;line-height:1.6;white-space:nowrap}
+.streak.up{color:#F87171;background:var(--up-bg)}
+.streak.down{color:#34D399;background:var(--down-bg)}
+.cr-t td,.cr-t th{white-space:nowrap}
+.cr-t td.num{font-family:var(--mono)}
+.cr-rng2 em{display:block;font-style:normal;font-size:11px;color:var(--muted);font-family:var(--mono)}
+.cr-detail summary{cursor:pointer;list-style:none;color:var(--text)}
+.cr-detail summary::-webkit-details-marker{display:none}
+.cr-detail summary::after{content:' ▾';color:var(--muted)}
+.cr-detail[open] summary{border-bottom:1px solid var(--line)}
+@media (max-width:560px){
+  .cr-row{grid-template-columns:1fr 1fr;row-gap:2px}
+  .cr-row > b{grid-column:1/-1}
+  .cr-k b{font-size:19px}
+}
