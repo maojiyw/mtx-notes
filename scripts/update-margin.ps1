@@ -7,9 +7,11 @@
   用法：
     pwsh scripts/update-margin.ps1                 # 補到今天
     pwsh scripts/update-margin.ps1 -Since 2026-08-20   # 指定回補起點（只補還沒有的日期）
+    pwsh scripts/update-margin.ps1 -Dates 2014-12-27,2016-01-30   # 只補指定日期的信用交易統計
 #>
 param(
   [string]$Since = '',
+  [string[]]$Dates = @(),
   [string]$Out = (Join-Path $PSScriptRoot '..' | Join-Path -ChildPath 'data/margin.json'),
   [int]$DelaySeconds = 3
 )
@@ -103,8 +105,11 @@ function Save-MarginData {
 $credit = New-Object System.Collections.Generic.List[object]
 foreach ($c in $data.credit) { $credit.Add($c) }
 $added = 0
-for ($day = $start; $day -le $today; $day = $day.AddDays(1)) {
-  if ($day.DayOfWeek -eq 'Saturday' -or $day.DayOfWeek -eq 'Sunday') { continue }
+if ($Dates.Count) { $days = @($Dates | ForEach-Object { $_ -split ',' } | Where-Object { $_.Trim() } | ForEach-Object { [DateTime]::ParseExact($_.Trim(), 'yyyy-MM-dd', $null) }) }
+else { $days = @(); for ($d = $start; $d -le $today; $d = $d.AddDays(1)) { $days += $d } }
+foreach ($day in $days) {
+  # 週日一律休市；週六在 2018 年以前可能是補班交易日（例如 2014-12-27），照樣查，沒資料會記在 log 並跳過
+  if ($day.DayOfWeek -eq 'Sunday' -or ($day.DayOfWeek -eq 'Saturday' -and $day.Year -ge 2019)) { continue }
   $ds = $day.ToString('yyyy-MM-dd')
   if ($have[$ds]) { continue }
   try {

@@ -8,7 +8,7 @@ window.MTXSheet = (function(){
   'use strict';
   const ID = '1J-vhV9ahpiZejIJ0pz565KBiptDfxJX3';
   const url = sheet => `https://docs.google.com/spreadsheets/d/${ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`;
-  const CACHE_KEY = 'mtx-sheet-v4', CACHE_MS = 10*60*1000;
+  const CACHE_KEY = 'mtx-sheet-v5', CACHE_MS = 10*60*1000;
 
   // 欄名（去掉空白後比對：先完全相同，再比對結尾）
   const MAIN = {
@@ -16,8 +16,11 @@ window.MTXSheet = (function(){
     fiSpot:'外資現貨買賣超', fiOI:'外資(大小台)期貨未平倉', fiRel:'外資期貨未平倉與結算比', fiDelta:'外資期貨未平倉與前日增減',
     rtLong:'散戶看多', rtShort:'散戶看空', rtLongPct:'多單持倉占比百分位', rtShortPct:'空單持倉占比百分位',
     mxLong:'微台看多', mxShort:'微台看空',
-    sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sigAmp:'幅度', sigStrong:'強烈落底', sig3:'連續三天期貨逆增'
+    sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sigAmp:'幅度', sigStrong:'強烈落底', sig3:'連續三天期貨逆增',
+    note:'每日短評'
   };
+  const TEXT = ['note'];   // 文字欄，不轉數字
+  // 單位備註：選擇權金額欄為千元（換億 ÷1e5）；「融資金額(仟元)」欄名有誤，數值其實是億
   const OPT = { bc:'外資BC金額', sc:'外資SC金額', bp:'外資BP金額', sp:'外資SP金額', bcsc:'外資BC/SC增幅比例', bpsp:'外資BP/SP增幅比例',
     bpQty:'外資BP口數', spQty:'外資SP口數' };
   const FLAGS = ['sigSPQty','sigSPAmt','sigMicro','sigBoth','sigAmp','sigStrong','sig3'];
@@ -79,7 +82,7 @@ window.MTXSheet = (function(){
     const rows=[];
     for(const r of A.slice(1)){ const d=date(r[0]); if(!d) continue;
       const o={date:d};
-      for(const k in ca){ const i=ca[k]; o[k]= i<0?null : FLAGS.includes(k)?flag(r[i]) : num(r[i]); }
+      for(const k in ca){ const i=ca[k]; o[k]= i<0?null : FLAGS.includes(k)||TEXT.includes(k)?flag(r[i]) : num(r[i]); }
       if(o.idx==null) continue;
       Object.assign(o, opt.get(d)||{});
       rows.push(o);
@@ -130,5 +133,11 @@ window.MTXSheet = (function(){
       return {date:s.date, bp:v, thr:sorted[Math.max(1,Math.floor((t+1)*0.02))-1]};
     });
   }
-  return { load, asChips, bpRedLine, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
+  /* BP紅燈亮燈首日：BP ≥ 當天門檻（2012 起），距離上一個亮燈日滿 10 個交易日才算新的一次；與 backtest.js 相同 */
+  function bpRedDays(S){
+    const out=[]; let last=-1e9;
+    bpRedLine(S).forEach((x,t)=>{ if(x.date<'2012-01-01'||x.bp<x.thr) return; if(t-last>=10) out.push(x.date); last=t; });
+    return out;
+  }
+  return { load, asChips, bpRedLine, bpRedDays, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
 })();
