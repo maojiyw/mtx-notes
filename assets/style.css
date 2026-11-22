@@ -461,6 +461,13 @@ table.t.bt tr.flash td{animation:btflash 1.6s ease-out}
   .cr-row > b{grid-column:1/-1}
   .cr-k b{font-size:19px}
 }
+/* 每日籌碼：預設收起的走勢圖（點標題展開） */
+.fold>summary{cursor:pointer;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::after{content:'▸';color:var(--muted);transition:transform .15s}
+.fold[open]>summary::after{transform:rotate(90deg)}
+.fold:not([open])>summary{border-bottom:0}
+.fold>summary .sub{margin-left:auto}
 
 /* 每日短評（主頁） */
 .nlist{display:grid;gap:10px}

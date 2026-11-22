@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const D = window.MTX;
-const UP='#EF4444', DN='#10B981';
+const UP='#EF4444', DN='#10B981', PURPLE='#A855F7';
 const $ = s => document.querySelector(s);
 const fmt = (n,d=2) => Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 const cls = v => v>0?'up':v<0?'down':'flat';
@@ -540,9 +540,10 @@ function renderChips(){
     const back=n=>new Date((dayNumOf(L.date)-n)*864e5).toISOString().slice(0,10);
     const first=R[0].date, last=L.date;
     const ecodes=Object.keys(ME);
-    const panes=[['加權指數','紅箭頭＝強烈落底'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・BC 紅・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）'],
+    const panes=[['加權指數','紅箭頭＝強烈落底・紫箭頭＝BP紅燈'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・SP 紅・BC 黃・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）'],
       ...(MR.length?[['大盤融資維持率','上市扣除 ETF・玩股網・虛線＝130%']]:[]),
-      ...(MC.length?[['融資餘額','上市紅・上櫃黃（億）'],['融券餘額','上市紅・上櫃黃（張）'],['正二 ETF 融資餘額',`${ecodes.map((c,i)=>`${c} ${['紅','黃'][i]||''}`).join('・')}（張）`]]:[])];
+      // 第三項 1＝預設收起，點標題才展開
+      ...(MC.length?[['融資餘額','上市紅・上櫃黃（億）',1],['融券餘額','上市紅・上櫃黃（張）',1],['正二 ETF 融資餘額',`${ecodes.map((c,i)=>`${c} ${['紅','黃'][i]||''}`).join('・')}（張）`,1]]:[])];
     main.innerHTML = `
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>每日籌碼</span></div>
       <div class="card r-head">
@@ -564,11 +565,6 @@ function renderChips(){
         ${kpi('微台多單／空單',`${n0(L.mxLong)}／${n0(L.mxShort)}`,`多單較前日 ${sgn0(delta('mxLong'))}・空單較前日 ${sgn0(delta('mxShort'))}`)}
       </div></div>
 
-      <section class="sec" id="credit">
-        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 21:30 自動更新</p></div>
-        <div id="creditBody">${M?'':'<div class="card"><p class="empty">讀不到信用交易資料。</p></div>'}</div>
-      </section>
-
       <section class="sec">
         <div class="sec-h"><h2>籌碼走勢</h2><p>日期區間同時套用到走勢圖與下方明細</p></div>
         <div class="card rangebar">
@@ -576,9 +572,15 @@ function renderChips(){
           <div class="dates"><label><span>起</span><input type="date" id="dFrom" min="${first}" max="${last}"></label><i>–</i><label><span>迄</span><input type="date" id="dTo" min="${first}" max="${last}"></label></div>
           <span class="rb-note num">可選 ${first.replace(/-/g,'/')} – ${last.replace(/-/g,'/')}</span>
         </div>
-        <div class="stack">${panes.map(([h,sub],i)=>`
-          <div class="card"><div class="card-h"><span>${h}</span> <span class="sub">${sub}</span></div><div class="chart tall"><div class="chart-legend num" id="lg${i}"></div><div id="ch${i}" style="position:absolute;inset:0"></div></div></div>`).join('')}
+        <div class="stack">${panes.map(([h,sub,fold],i)=>{
+          const head=`<span>${h}</span> <span class="sub">${sub}</span>`, body=`<div class="chart tall"><div class="chart-legend num" id="lg${i}"></div><div id="ch${i}" style="position:absolute;inset:0"></div></div>`;
+          return fold?`<details class="card fold"><summary class="card-h">${head}</summary>${body}</details>`:`<div class="card"><div class="card-h">${head}</div>${body}</div>`; }).join('')}
         </div>
+      </section>
+
+      <section class="sec" id="credit">
+        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 21:30 自動更新</p></div>
+        <div id="creditBody">${M?'':'<div class="card"><p class="empty">讀不到信用交易資料。</p></div>'}</div>
       </section>
 
       <section class="sec" id="tbl">
@@ -641,8 +643,11 @@ function renderChips(){
     let c=mk(0);
     const s0=c.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.25)',bottomColor:'rgba(96,165,250,.02)',lineWidth:2,priceFormat:{type:'price',precision:0,minMove:1}});
     s0.setData(R.map(r=>({time:T(r),value:r.idx})));
-    s0.setMarkers(R.filter(isStrong).map(r=>({time:T(r),position:'belowBar',color:UP,shape:'arrowUp'})));
-    legend(0,r=>`加權 <b>${n2(r.idx)}</b> <span class="${cls(r.chg)}">${sign(r.chg)}${n2(r.chg)}</span>${sigList(r).length?' ・<span class="up">'+sigList(r).join(' ／ ')+'</span>':''}`,c);
+    // 紅箭頭＝強烈落底、紫箭頭＝BP紅燈亮燈首日（與訊號回測頁相同算法）
+    const bpDays=new Set(window.MTXSheet.bpRedDays(data.bpSeries||[]));
+    s0.setMarkers([...R.filter(isStrong).map(r=>({time:T(r),position:'belowBar',color:UP,shape:'arrowUp'})),
+      ...R.filter(r=>bpDays.has(r.date)).map(r=>({time:T(r),position:'belowBar',color:PURPLE,shape:'arrowUp'}))].sort((a,b)=>a.time<b.time?-1:1));
+    legend(0,r=>`加權 <b>${n2(r.idx)}</b> <span class="${cls(r.chg)}">${sign(r.chg)}${n2(r.chg)}</span>${sigList(r).length?' ・<span class="up">'+sigList(r).join(' ／ ')+'</span>':''}${bpDays.has(r.date)?` ・<span style="color:${PURPLE}">BP紅燈</span>`:''}`,c);
 
     c=mk(1);
     const s1=c.addHistogramSeries({priceFormat:{type:'volume'}});
@@ -651,8 +656,8 @@ function renderChips(){
     s1.createPriceLine({price:10000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'+1萬'});
     legend(1,r=>`相對結算 <b class="${cls(r.fiRel)}">${n0(r.fiRel)}</b> 前日 <span class="${cls(r.fiDelta)}">${n0(r.fiDelta)}</span> 總未平倉 ${n0(r.fiOI)}`,c);
 
-    c=mk(2); lines(c,[['sc','#10B981'],['bc','#EF4444'],['bp','#A855F7']]);
-    legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
+    c=mk(2); lines(c,[['sc','#10B981'],['bc','#F59E0B'],['sp','#EF4444'],['bp','#A855F7']]);
+    legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">SP ${n0(r.sp)}</span> <span style="color:#F59E0B">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
 
     c=mk(3); lines(c,[['mxShort','#10B981'],['mxLong','#EF4444']]);
     legend(3,r=>`微台多 <b class="up">${n0(r.mxLong)}</b> 空 <b class="down">${n0(r.mxShort)}</b>`,c);
@@ -685,6 +690,8 @@ function renderChips(){
     // 圖表剛建立時還量不到寬度，第一次設定的區間可能失效；量到寬度後再套用一次
     const ro=window.ResizeObserver&&new ResizeObserver(()=>{ if($('#ch0').clientWidth){ ro.disconnect(); setTimeout(()=>sync.set(range[0],range[1]),0); } });
     if(ro) ro.observe($('#ch0')); setTimeout(()=>sync.set(range[0],range[1]),120);
+    // 收起的圖打開時才量得到寬度，打開後套用目前的日期區間
+    main.querySelectorAll('details.fold').forEach(d=>d.addEventListener('toggle',()=>{ if(d.open) setTimeout(()=>sync.set(range[0],range[1]),0); }));
   }).catch(err=>{
     main.innerHTML=`<div class="card r-head"><h1>每日籌碼</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
   });
@@ -890,10 +897,11 @@ function renderSignals(){
       (window.__btCharts||(window.__btCharts={}))[s.id]=ch;   // 方便在主控台檢查
       const ser=ch.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.2)',bottomColor:'rgba(96,165,250,.02)',lineWidth:1.5,priceFormat:{type:'price',precision:0,minMove:1}});
       ser.setData(mk.d.map((d,i)=>({time:d,value:mk.c[i]})));
-      ser.setMarkers(s.idxs.map(i=>({time:mk.d[i],position:'belowBar',color:UP,shape:'arrowUp'})));
+      const mcol=s.id==='bp'?PURPLE:UP;   // BP紅燈用紫色箭頭，與每日籌碼走勢圖一致
+      ser.setMarkers(s.idxs.map(i=>({time:mk.d[i],position:'belowBar',color:mcol,shape:'arrowUp'})));
       ch.timeScale().fitContent();
       const evd=s.idxs.map(i=>mk.d[i]);
-      const show=t=>{ const i=t?mk.idxOf.get(t):LAST; lg.innerHTML=`<b>${dt(mk.d[i])}</b> 加權 <b>${fmt(mk.c[i])}</b>${evd.includes(mk.d[i])?` ・<span style="color:${UP}">${s.name}</span>`:''}`; };
+      const show=t=>{ const i=t?mk.idxOf.get(t):LAST; lg.innerHTML=`<b>${dt(mk.d[i])}</b> 加權 <b>${fmt(mk.c[i])}</b>${evd.includes(mk.d[i])?` ・<span style="color:${mcol}">${s.name}</span>`:''}`; };
       show(); ch.subscribeCrosshairMove(p=>show(p&&tStr(p.time)));
       /* ---- 日期區間：滑鼠滾輪放大縮小、按住拖曳左右移動；快速按鈕與起訖日期；雙擊回到全部 ---- */
       const first=mk.d[0], lastD=mk.d[LAST];
