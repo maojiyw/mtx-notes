@@ -146,7 +146,7 @@ function chipCharts(ids,C,{end=null,days=90}={}){
   if(!empty(ids[1],C.fiBP)){
     const c2=baseChart($(ids[1])); const h2=c2.addHistogramSeries({priceFormat:{type:'volume'}});
     h2.setData(pick(C.fiBP).map(x=>({time:x.time,value:x.v,color:x.v>=2500000?'#A855F7':x.v>=2000000?'rgba(168,85,247,.6)':'rgba(96,165,250,.5)'})));
-    // BP紅燈門檻：試算表資料用逐日滾動門檻（歷史前 2%）；退回筆記數字時用筆記的 3.64 億
+    // BP紅燈門檻：試算表資料用逐日滾動門檻（歷史前 2%）；退回筆記數字時用 36.4 億（3,640,000 千元）
     if(C.fiBPThr){ const l2=c2.addLineSeries({color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈',priceLineVisible:false,crosshairMarkerVisible:false,priceFormat:{type:'volume'}});
       l2.setData(pick(C.fiBPThr).map(x=>({time:x.time,value:x.v}))); }
     else h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'});
@@ -229,8 +229,27 @@ function campaignLive(lo,peakIntra){
       if(!lit&&s.bp>=s.thr) lit=s;
     });
     if(!peak) return;
-    const yi=v=>(v/1e6).toFixed(2)+' 億';
+    const yi=v=>(v/1e5).toFixed(1)+' 億';   // 試算表金額單位是千元：千元 ÷ 10 萬 ＝ 億
     kb.innerHTML=`<span>外資 BP 峰值（${md(peak.date)}）</span><b class="num" style="color:#C084FC">${yi(peak.bp)}</b><em>紅燈約 ${yi(thr)}，${lit?md(lit.date)+' 觸發':'未觸發'}</em>`;
+  }).catch(()=>{});
+}
+/* 主頁每日短評：讀試算表工作表1「每日短評」欄，預設顯示最近 5 則，可展開更早的 */
+function dailyNotes(){
+  const S=window.MTXSheet, box=$('#notes'), sec=$('#notesSec'); if(!S||!box||!sec) return;
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  S.load().then(d=>{
+    const N=d.rows.filter(r=>r.note).reverse(); if(!N.length) return;
+    const SHOW=5; let all=false;
+    const item=(r,i)=>`<div class="card nitem${i===0?' latest':''}">
+        <div class="d"><b>${r.date.replace(/-/g,'/')}</b><em>${weekday(r.date)}</em><span class="num ${cls(r.chg)}">${fmt(r.idx)}　${sign(r.pct)}${r.pct==null?'—':r.pct.toFixed(2)}%</span></div>
+        <p>${esc(r.note)}</p></div>`;
+    const draw=()=>{
+      const list=all?N:N.slice(0,SHOW);
+      box.innerHTML=list.map(item).join('')+(N.length>SHOW?`<button class="nmore" type="button">${all?'收起，只看最近 '+SHOW+' 則':'看更早的短評（共 '+N.length+' 則）'}</button>`:'');
+      const b=box.querySelector('.nmore'); if(b) b.onclick=()=>{ all=!all; draw(); };
+    };
+    $('#notesCount').textContent=`最新在最上面・最近更新 ${N[0].date.replace(/-/g,'/')}`;
+    sec.hidden=false; draw();
   }).catch(()=>{});
 }
 function renderHome(){
@@ -255,12 +274,13 @@ function renderHome(){
     <div class="card hero-main feat feat-chips" id="daily"><div class="feat-tag"><i class="live"></i>每日籌碼<span>每日更新</span></div><p class="loading">讀取試算表中…</p></div>`;
   dailyCard($('#daily'));
   setTimeout(()=>campaignLive(lo,peakIntra));
+  setTimeout(dailyNotes);
   $('#campaign').innerHTML = `<div class="card"><div class="kpis k6">
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
       <div class="kpi" id="kpiLast"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
       <div class="kpi"><span>目前部位</span><b class="num">${latest.position}</b>${latest.positionNote?`<em>${latest.positionNote}</em>`:''}</div>
-      <div class="kpi" id="kpiBP"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">3.25 億</b><em>紅燈約 3.64 億，未觸發</em></div>
+      <div class="kpi" id="kpiBP"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">32.5 億</b><em>紅燈約 36.4 億，未觸發</em></div>
       <div class="kpi"><span>復盤篇數</span><b class="num">${D.reviews.length} 篇</b><em>${md(D.reviews[D.reviews.length-1].date)} – ${md(latest.date)}</em></div>
     </div></div>`;
 

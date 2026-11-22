@@ -468,3 +468,22 @@ table.t.bt tr.flash td{animation:btflash 1.6s ease-out}
 .fold[open]>summary::after{transform:rotate(90deg)}
 .fold:not([open])>summary{border-bottom:0}
 .fold>summary .sub{margin-left:auto}
+
+/* 每日短評（主頁） */
+.nlist{display:grid;gap:10px}
+.nitem{display:grid;grid-template-columns:150px minmax(0,1fr);gap:20px;align-items:start;padding:16px 20px}
+.nitem .d{font-family:var(--mono)}
+.nitem .d b{display:block;font-size:17px}
+.nitem .d span{font-size:13px}
+.nitem .d em{display:block;font-style:normal;font-size:12px;color:var(--muted)}
+.nitem p{font-size:14.5px;line-height:1.75;white-space:pre-line}
+.nitem.latest{border-color:rgba(245,158,11,.5)}
+.nmore{font:inherit;font-size:13px;color:var(--muted);background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:6px 14px;cursor:pointer;justify-self:start}
+.nmore:hover{color:var(--text)}
+@media (max-width:900px){ .nitem{grid-template-columns:110px minmax(0,1fr)} }
+@media (max-width:560px){
+  .nitem{grid-template-columns:1fr;gap:6px;padding:14px 16px}
+  .nitem .d{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .nitem .d b{display:inline}
+  .nitem .d em{display:inline}
+}
