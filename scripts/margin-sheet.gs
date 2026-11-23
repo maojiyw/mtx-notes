@@ -3,11 +3,14 @@
  *
  * 用法（只做一次）：
  *   1. 新增一份 Google 試算表 → 擴充功能 → Apps Script → 把這整個檔案貼上 → 儲存
- *   2. 上方函式選單選「setup」→ 執行 → 依指示授權
- *      會建立「信用交易」工作表、匯入 2014 年起的歷史資料、測試玩股網、設定每小時自動更新
- *   3. 試算表 → 共用 → 一般存取權改成「知道連結的任何人」可檢視
+ *   2. 左側齒輪「專案設定」→ 時區選「(GMT+08:00) 台北」
+ *   3. 上方函式選單選「setup」→ 執行 → 依指示授權
+ *      會建立「信用交易」工作表、匯入 2014 年起的歷史資料（已有資料就略過）、測試玩股網、設定自動更新
+ *   4. 試算表 → 共用 → 一般存取權改成「知道連結的任何人」可檢視
  *
- * 之後每小時自動執行 update()：只在台北時間 21:00–23:59 抓當天資料，也會補漏掉的日期（最多往回 10 天）。
+ * 之後每天台北時間 21:30、22:30、23:30 左右（Google 排程會前後差 15 分鐘內）自動執行 update()：
+ *   - 新增證交所已公布的日期（也會補最近 10 天內漏掉的日期）
+ *   - 櫃買還沒公布時先寫入、上櫃欄位空白，之後的執行抓到就補上
  * B 欄「維持率」：玩股網擋國外連線時抓不到，請手動填（例如 119.53）；程式不會覆蓋手動填的數字。
  */
 
@@ -22,8 +25,11 @@ const HEAD = ['日期', '維持率(%)', '融資餘額扣除ETF(億)',
 const HISTORY_URL = 'https://raw.githubusercontent.com/maojiyw/mtx-notes/960fb91c36f68354cf3995f1d1966f0caf43b408/data/margin.json';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
-/* ---------- 一次性設定 ---------- */
+/* ---------- 一次性設定（改排程時間也是重新執行這個） ---------- */
+const RUN_HOURS = [21, 22, 23];   // 每天這幾點的 30 分左右執行（台北時間）
 function setup() {
+  const tz = Session.getScriptTimeZone();
+  if (tz !== 'Asia/Taipei') throw new Error('專案時區是 ' + tz + '，請先到左側齒輪「專案設定」把時區改成台北（GMT+08:00），再執行一次 setup');
   const sh = getSheet_();
   if (sh.getLastRow() <= 1) importHistory_(sh);
   const wg = fetchWantgoo_();
@@ -31,12 +37,12 @@ function setup() {
                 : '玩股網：抓不到（被擋），B 欄維持率請每天手動填');
   if (wg) fillRatio_(sh, wg);
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('update').timeBased().everyHours(1).create();
-  Logger.log('已設定每小時自動更新');
+  RUN_HOURS.forEach(h => ScriptApp.newTrigger('update').timeBased().atHour(h).nearMinute(30).everyDays(1).create());
+  Logger.log('已設定每天 ' + RUN_HOURS.map(h => h + ':30').join('、') + ' 自動更新');
   run_(true);
 }
 
-/* ---------- 每小時執行 ---------- */
+/* ---------- 排程執行 ---------- */
 function update() { run_(false); }
 function run_(force) {
   const now = new Date();
@@ -54,8 +60,7 @@ function run_(force) {
     if (!tw) { Logger.log(d + ' 證交所沒有資料（休市或尚未公布）'); continue; }
     let tp = null; try { tp = fetchTpex_(d); } catch (e) { Logger.log(d + ' 櫃買讀取失敗：' + e); }
     Utilities.sleep(3000);
-    // 櫃買還沒公布：當天 23 點前先不寫，下個小時再試（避免留下上櫃空白列）
-    if (!tp && d === today && hour < 23) { Logger.log(d + ' 櫃買尚未公布，下個小時再試'); break; }
+    if (!tp) Logger.log(d + ' 櫃買尚未公布，上櫃欄位先空白，之後補');
     const row = [d, '', ''].concat(
       [tw.loan, tw.loanChg, tw.short, tw.shortChg],
       tp ? [tp.loan, tp.loanChg, tp.short, tp.shortChg] : ['', '', '', '']);
@@ -63,8 +68,24 @@ function run_(force) {
     sh.appendRow(row);
     Logger.log(d + ' 已新增：上市資增減 ' + tw.loanChg + ' 億');
   }
+  fillTpex_(sh);
   const wg = fetchWantgoo_();
   if (wg) fillRatio_(sh, wg);
+}
+/** 最近 10 列中上櫃欄位（H～K）空白的日期，重抓櫃買補上 */
+function fillTpex_(sh) {
+  const lastRow = sh.getLastRow(); if (lastRow < 2) return;
+  const first = Math.max(2, lastRow - 9);
+  const v = sh.getRange(first, 1, lastRow - first + 1, 11).getValues();
+  v.forEach((r, i) => {
+    if (r[7] !== '') return;
+    const d = ymd_(r[0]);
+    let tp = null; try { tp = fetchTpex_(d); } catch (e) { Logger.log(d + ' 櫃買讀取失敗：' + e); }
+    Utilities.sleep(3000);
+    if (!tp) return;
+    sh.getRange(first + i, 8, 1, 4).setValues([[tp.loan, tp.loanChg, tp.short, tp.shortChg]]);
+    Logger.log(d + ' 已補上櫃資料');
+  });
 }
 
 /* ---------- 資料來源 ---------- */

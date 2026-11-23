@@ -336,7 +336,7 @@ function renderCredit(M,body,noteEl){
   {
     const R=M.ratio||[], C=M.credit||[], E=M.etfs||{};
     const codes=Object.keys(E);
-    if(noteEl) noteEl.textContent=`資料至 ${M.updated||'—'}・每個交易日晚上 9 點後自動更新（維持率人工填）`;
+    if(noteEl) noteEl.textContent=`資料至 ${M.updated||'—'}・每個交易日晚上 21:30 起自動更新（維持率人工填）`;
 
     /* ---- 維持率 ---- */
     const r1=R[R.length-1], r0=R[R.length-2];
@@ -588,7 +588,7 @@ function renderChips(){
       </section>
 
       <section class="sec" id="credit">
-        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 9 點後自動更新</p></div>
+        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 21:30 起自動更新</p></div>
         <div id="creditBody">${M?'':'<div class="card"><p class="empty">讀不到信用交易資料。</p></div>'}</div>
       </section>
 

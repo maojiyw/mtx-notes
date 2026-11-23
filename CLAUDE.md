@@ -62,7 +62,7 @@
 
 ## 信用交易（每日籌碼頁；2026-11-21 合併）
 
-- **2026-11-23 專案決定：資料改放「信用交易」Google 試算表，不放 repo**（資料每天變動，放在程式碼裡會讓 commit 紀錄被資料洗版）。網站用 `assets/sheet.js` 的 `MTXSheet.loadMargin()` 讀取（gviz CSV，回傳與舊 `margin.json` 相同結構）。試算表內的 Apps Script（原始碼 `scripts/margin-sheet.gs`）每小時執行，台北 21:00 後抓證交所／櫃買寫入新的一列，補最近 10 天內漏掉的日期。原本的 `data/margin.json`、`scripts/update-margin.ps1`、GitHub Actions 排程已移除（git 歷史中可找到）。
+- **2026-11-23 專案決定：資料改放「信用交易」Google 試算表，不放 repo**（資料每天變動，放在程式碼裡會讓 commit 紀錄被資料洗版）。網站用 `assets/sheet.js` 的 `MTXSheet.loadMargin()` 讀取（gviz CSV，回傳與舊 `margin.json` 相同結構）。試算表內的 Apps Script（原始碼 `scripts/margin-sheet.gs`）每天台北 21:30、22:30、23:30 左右執行（Google 排程前後差 15 分鐘內；專案時區須設台北），抓證交所／櫃買寫入新的一列，補最近 10 天內漏掉的日期；櫃買晚公布時上櫃欄位先空白、之後補上。原本的 `data/margin.json`、`scripts/update-margin.ps1`、GitHub Actions 排程已移除（git 歷史中可找到）。
 - **大盤融資維持率（上市扣除 ETF）**：專案決定直接用玩股網數字（公開資料算不出相同值；公開算法約是玩股網的 1/0.87）。來源 `https://www.wantgoo.com/stock/-ETFA/margin-trading/historical-lending-balance`（需 Referer 與 X-Requested-With 標頭），`marginRatio`×100＝維持率、`lendingBalance`÷1e5＝融資餘額（億）；只有 2024/11 起。**玩股網擋國外連線（GitHub、Google 主機都回 403），所以維持率由人工每天填在試算表 B 欄**；C 欄融資餘額可留空，網站會略過。程式只填空白格，不覆蓋人工數字。
 - **每日信用交易統計**（格式參考 PTT 股票版每日的「信用交易統計」）：
   - 上市：證交所 `MI_MARGN?date=YYYYMMDD&selectType=ALL` 第一張表；資增減（億）＝融資金額(仟元) 今日－前日 ÷1e5，券增減（張）＝融券(交易單位) 今日－前日。
