@@ -20,7 +20,7 @@
 - **散戶多空一律用微台**（試算表 AO／AP 欄「微台看多／看空」）：每日籌碼卡片、明細預設欄位、散戶走勢圖、主頁籌碼卡、籌碼小圖。AS／AT 欄「散戶看多／看空」是小+微合計（微台 ÷5 折成小台），在網站上叫「小+微」。試算表的「多單／空單持倉占比百分位」也是微台（2026-11-23 確認；先前誤標為小+微）。
 - **全站圖表**（Lightweight Charts 4.1.3）：滑鼠滾輪放大縮小、按住拖曳左右移動；手機兩指縮放、左右滑動，上下滑仍捲動頁面。設定在 `assets/app.js` 的 `baseChart`。多張圖共用時間軸用 `syncCharts`（只由瀏覽者正在操作的圖帶動其他圖）。
 - 圖表建立當下常量不到寬度，`setVisibleRange` 會失效（只顯示最後幾個月）；量到寬度後要再套用一次區間（`ResizeObserver`）。
-- 修改 `assets/` 下的檔案後，所有 HTML 的 `?v=` 版本號要一起更新（目前格式 `YYYYMMDD` 加英文字母）。
+- 資源檔引用**不加 `?v=` 版本號**（2026-11-23 移除）。修改 `assets/` 時不要去改舊的 HTML；GitHub Pages 快取只有 10 分鐘（`max-age=600`），不需要版本號。新增頁面時引用也不要加 `?v=`。
 
 ## 新增一週復盤（常見要求：「我新增了一個 PDF，幫我建立 html」）
 
@@ -32,7 +32,7 @@
    - 成交值（`vol` 與 `market` 的「成交」）用證交所 `FMTQIK` 的成交金額（與 HiStock、看盤軟體接近；新聞常引用的較小數字只含部分證券）。
 3. 當日開高低與成交值查新聞；`daily` 若缺該週收盤，用證交所 `FMTQIK` 月資料補（`https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date=YYYYMM01&response=json`）。
 4. 視需要補 `campaign.timeline`／`events`、`tables`、`glossary`。
-5. 複製一個 `reviews/*.html` 改檔名、`data-id`、title、og。更新所有 `?v=`、README 篇數。
+5. 複製一個 `reviews/*.html` 改檔名、`data-id`、title、og。更新 README 篇數（不需要改其他 HTML）。
 6. 本機預覽檢查，再依要求 commit／PR。
 
 ## 訊號回測頁（signals.html）
