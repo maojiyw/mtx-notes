@@ -27,6 +27,9 @@
 1. 讀 `notes-pdf/` 裡新的 PDF（標題以內頁為準，檔名可能不同）。
 2. 在 `assets/data.js` 的 `reviews` 依日期放到正確位置（陣列新到舊），欄位照既有格式：`tldr`、`parts`（`{k:1,t:'…'}` 為重點，可附 `tables`）、`market`（當週每日 facts／notes）、`sources`（新聞來源）。
    - `position`（部位）與 `positionNote`（主頁「目前部位」下方小字，例如「11/2 以 1.68 倍進場」）都依文章內容填，**填完把解讀出來的文字列給提出要求的人確認**。
+   - 部位以「布局／回顧持倉狀況」的 K 線圖為準：紅框＝買入、綠框＝賣出，框旁的百分比是操作後的部位（210%＝2.1x），**最右邊的框是最新部位**。圖上讀不出來時再依內文解讀。
+   - 兩次操作之間的槓桿依大盤漲跌推算：L′＝L×(1+r)÷(1+L×r)，r＝加權指數從進場價（或上次計算日）到當天收盤的漲跌幅。例如 11/17 在 39,975 加到 2.1x，11/20 收 36,033.29 → 約 2.39x。時間軸與 `position` 標示推算值時，`positionNote` 註明進場倍數。最新一篇設 `posBase:{date,price,lev}`（進場日、進場點位、進場倍數），主頁「目前部位」會讀試算表最新收盤自動推算；有新的買賣就改成新的進場點。
+   - 成交值（`vol` 與 `market` 的「成交」）用證交所 `FMTQIK` 的成交金額（與 HiStock、看盤軟體接近；新聞常引用的較小數字只含部分證券）。
 3. 當日開高低與成交值查新聞；`daily` 若缺該週收盤，用證交所 `FMTQIK` 月資料補（`https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date=YYYYMM01&response=json`）。
 4. 視需要補 `campaign.timeline`／`events`、`tables`、`glossary`。
 5. 複製一個 `reviews/*.html` 改檔名、`data-id`、title、og。更新所有 `?v=`、README 篇數。

@@ -221,6 +221,15 @@ function campaignLive(lo,peakIntra){
       const sub=L.idx<lo?`已跌破波段低點 ${((L.idx/lo-1)*100).toFixed(2)}%`:`已收復約 ${rec.toFixed(0)}% 跌幅`;
       kl.innerHTML=`<span>最新收盤（${md(L.date)}）</span><b class="num ${cls(L.chg)}">${fmt(L.idx)}</b><em>${sub}</em>`;
     }
+    /* 目前部位：從最近一次進場（posBase）依加權收盤推算槓桿 L′＝L×(1+r)÷(1+L×r) */
+    const P=D.reviews[0].posBase, kp=$('#kpiPos');
+    if(P&&kp&&L&&L.idx!=null&&L.date>=P.date){
+      const r=L.idx/P.price-1, lev=P.lev*(1+r)/(1+P.lev*r);
+      if(lev>0&&isFinite(lev)){
+        kp.innerHTML=`<span>目前部位（推算）</span><b class="num">${lev.toFixed(2)}x</b><em>${md(P.date)} 以 ${P.lev} 倍進場，依 ${md(L.date)} 收盤推算</em>`;
+        const hp=$('#heroPos'); if(hp) hp.textContent=`${lev.toFixed(2)}x（推算）`;
+      }
+    }
     const B=d.bpSeries||[], kb=$('#kpiBP'); if(!kb||!B.length) return;
     const from=D.campaign.high.date, T=S.bpRedLine(B), thr=T[T.length-1].thr; let peak=null, lit=null;
     T.forEach(s=>{
@@ -266,7 +275,7 @@ function renderHome(){
       <p>${latest.summary}</p>
       <div class="dgrid keys">
         <div><span>復盤週次</span><b class="num">${md(latest.week[0])} – ${md(latest.week[1])}</b></div>
-        <div><span>部位</span><b>${latest.position||'—'}</b></div>
+        <div><span>部位</span><b id="heroPos">${latest.position||'—'}</b></div>
       </div>
       <div class="pills hk-pills"><span class="sigs-h">本週重點</span>${latest.pills.map(([c,t])=>`<span class="pill ${c}">${t}</span>`).join('')}</div>
       <div class="ctas"><a class="cta" href="${reviewUrl(latest)}">閱讀本週復盤 →</a><a class="cta ghost" href="#list">所有復盤</a></div>
@@ -279,7 +288,7 @@ function renderHome(){
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
       <div class="kpi" id="kpiLast"><span>最新收盤（${md(last.time)}）</span><b class="num ${cls(last.chg)}">${fmt(last.value)}</b><em>已收復約 ${rec.toFixed(0)}% 跌幅</em></div>
-      <div class="kpi"><span>目前部位</span><b class="num">${latest.position}</b>${latest.positionNote?`<em>${latest.positionNote}</em>`:''}</div>
+      <div class="kpi" id="kpiPos"><span>目前部位</span><b class="num">${latest.position}</b>${latest.positionNote?`<em>${latest.positionNote}</em>`:''}</div>
       <div class="kpi" id="kpiBP"><span>外資 BP 峰值（11/6）</span><b class="num" style="color:#C084FC">32.5 億</b><em>紅燈約 36.4 億，未觸發</em></div>
       <div class="kpi"><span>復盤篇數</span><b class="num">${D.reviews.length} 篇</b><em>${md(D.reviews[D.reviews.length-1].date)} – ${md(latest.date)}</em></div>
     </div></div>`;
