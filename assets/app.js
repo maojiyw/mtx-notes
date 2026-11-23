@@ -152,7 +152,7 @@ function chipCharts(ids,C,{end=null,days=90}={}){
     else h2.createPriceLine({price:3640000,color:UP,lineStyle:2,lineWidth:1,title:'BP紅燈'});
     c2.timeScale().fitContent();
   }
-  const sub3=$(ids[2]+'s'); if(sub3) sub3.textContent=C.micro?'柱＝微台多單（口）・線＝小+微持倉百分位':'柱＝口數・線＝持倉比';
+  const sub3=$(ids[2]+'s'); if(sub3) sub3.textContent=C.micro?'柱＝微台多單（口）・線＝微台持倉百分位':'柱＝口數・線＝持倉比';
   if(!empty(ids[2],C.rtLong)){
     const c3=baseChart($(ids[2]),{leftPriceScale:{visible:true,borderColor:'#232B3A'}});
     const h3=c3.addHistogramSeries({priceScaleId:'left',priceFormat:{type:'volume'},color:'rgba(239,68,68,.35)'});
