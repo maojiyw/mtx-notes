@@ -121,7 +121,7 @@ window.MTXSheet = (function(){
     const R=d.rows, T=bpRedLine(d.bpSeries||[]); let j=-1;
     // 每列日期對應當天以前最近一筆的紅燈門檻
     const thr=R.map(r=>{ while(j+1<T.length&&T[j+1].date<=r.date) j++; return j<0?null:T[j].thr; });
-    // 散戶多單＝微台（AO 欄）；持倉百分位只有小+微
+    // 散戶多單＝微台（AO 欄）；持倉百分位（試算表「多單／空單持倉占比百分位」）也是微台
     return { dates:R.map(r=>r.date), fiOI:R.map(r=>r.fiRel), fiBP:R.map(r=>r.bp??null), fiBPThr:thr, rtLong:R.map(r=>r.mxLong), rtPct:R.map(r=>r.rtLongPct), micro:true };
   }
   /* BP紅燈（歷史前 2%）逐日門檻：當天以前（含當天）所有 BP 由大到小第 k 大，k＝max(1, floor(筆數×2%))；與 backtest.js 相同
