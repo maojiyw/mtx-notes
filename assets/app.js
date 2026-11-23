@@ -311,8 +311,8 @@ function renderHome(){
 }
 
 /* =====================================================================
-   信用交易（data/margin.json，GitHub Actions 每晚 21:30 更新）
-   - 大盤融資維持率（上市扣除 ETF）：玩股網
+   信用交易（信用交易 Google 試算表，Apps Script 每個交易日晚上自動更新；sheet.js 的 MTXSheet.loadMargin）
+   - 大盤融資維持率（上市扣除 ETF）：玩股網數字，人工每天填（玩股網擋國外連線）
    - 每日信用交易統計：證交所、櫃買中心；指定 ETF 的融資融券張數
    ===================================================================== */
 const sgnN = (v,d=0) => v==null?'—':`${v>0?'+':''}${fmt(v,d)}`;
@@ -330,13 +330,13 @@ function streakStats(dates,vals){
   return {cur:st[st.length-1]||0, up, dn};
 }
 
-const loadMargin = () => fetch(base+'data/margin.json',{cache:'no-cache'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
+const loadMargin = () => window.MTXSheet ? MTXSheet.loadMargin() : Promise.reject(new Error('sheet.js 未載入'));
 // 顯示在每日籌碼頁；回傳 setRange(from,to)，讓每日明細跟著頁面的日期區間
 function renderCredit(M,body,noteEl){
   {
     const R=M.ratio||[], C=M.credit||[], E=M.etfs||{};
     const codes=Object.keys(E);
-    if(noteEl) noteEl.textContent=`資料更新：${M.updated||'—'}・每個交易日晚上 21:30 自動更新`;
+    if(noteEl) noteEl.textContent=`資料至 ${M.updated||'—'}・每個交易日晚上 9 點後自動更新（維持率人工填）`;
 
     /* ---- 維持率 ---- */
     const r1=R[R.length-1], r0=R[R.length-2];
@@ -344,7 +344,7 @@ function renderCredit(M,body,noteEl){
       <div class="card"><div class="card-h"><span>大盤融資維持率（上市扣除 ETF）</span><span class="sub">${r1[0].replace(/-/g,'/')}</span></div>
         <div class="dgrid keys cr-k">
           <div><span>融資維持率</span><b class="num ${r1[1]<140?'pend':''}">${r1[1].toFixed(2)}%</b><em>${r0?`前一日 ${r0[1].toFixed(2)}%（${sgnN(+(r1[1]-r0[1]).toFixed(2),2)}）`:''}${r1[1]<130?'・<span class="pend">低於 130% 追繳線</span>':''}</em></div>
-          <div><span>融資餘額（扣除 ETF）</span><b class="num">${fmt(r1[2])} 億</b><em>${r0?`較前日 <span class="${cls(r1[2]-r0[2])}">${sgnN(+(r1[2]-r0[2]).toFixed(2),2)} 億</span>`:''}</em></div>
+          <div><span>融資餘額（扣除 ETF）</span><b class="num">${r1[2]==null?'—':fmt(r1[2])+' 億'}</b><em>${r0&&r1[2]!=null&&r0[2]!=null?`較前日 <span class="${cls(r1[2]-r0[2])}">${sgnN(+(r1[2]-r0[2]).toFixed(2),2)} 億</span>`:''}</em></div>
         </div>
         <div class="tabs cr-rng" id="crRange">${[['3M',91],['6M',182],['1Y',365],['全部',0]].map(([t,n])=>`<button data-n="${n}"${n===365?' class="on"':''}>${t}</button>`).join('')}</div>
         <div class="chart cr-chart"><div class="chart-legend num" id="crLg"></div><div id="crChart" style="position:absolute;inset:0"></div></div>
@@ -407,7 +407,7 @@ function renderCredit(M,body,noteEl){
       s.setData(R.map(x=>({time:x[0],value:x[1]})));
       s.createPriceLine({price:130,color:UP,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'130%'});
       const byD=new Map(R.map(x=>[x[0],x]));
-      const lg=$('#crLg'), show=t=>{ const x=byD.get(t)||r1; lg.innerHTML=`<b>${x[0].replace(/-/g,'/')}</b> 維持率 <b>${x[1].toFixed(2)}%</b>・融資 ${fmt(x[2])} 億`; };
+      const lg=$('#crLg'), show=t=>{ const x=byD.get(t)||r1; lg.innerHTML=`<b>${x[0].replace(/-/g,'/')}</b> 維持率 <b>${x[1].toFixed(2)}%</b>${x[2]==null?'':`・融資 ${fmt(x[2])} 億`}`; };
       show(); ch.subscribeCrosshairMove(p=>show(p&&p.time));
       const last=R[R.length-1][0];
       const setN=n=>{ const from=n?new Date((dayNumOf(last)-n)*864e5).toISOString().slice(0,10):R[0][0];
@@ -588,7 +588,7 @@ function renderChips(){
       </section>
 
       <section class="sec" id="credit">
-        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 21:30 自動更新</p></div>
+        <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 9 點後自動更新</p></div>
         <div id="creditBody">${M?'':'<div class="card"><p class="empty">讀不到信用交易資料。</p></div>'}</div>
       </section>
 
@@ -671,7 +671,7 @@ function renderChips(){
     c=mk(3); lines(c,[['mxShort','#10B981'],['mxLong','#EF4444']]);
     legend(3,r=>`微台多 <b class="up">${n0(r.mxLong)}</b> 空 <b class="down">${n0(r.mxShort)}</b>`,c);
 
-    /* ---- 信用交易歷史（data/margin.json）：和上面的圖共用日期區間 ---- */
+    /* ---- 信用交易歷史（信用交易試算表）：和上面的圖共用日期區間 ---- */
     let pi=4;
     const mLegend=(i,c,rows,fn)=>{ const el=$('#lg'+i), by=new Map(rows.map(x=>[x.d,x]));
       const at=t=>{ if(t&&by.has(t)) return by.get(t); for(let k=rows.length-1;k>=0;k--) if(rows[k].d<=range[1]) return rows[k]; return rows[rows.length-1]; };
@@ -682,7 +682,7 @@ function renderChips(){
       const rows=MR.map(x=>({d:x[0],r:x[1],b:x[2]}));
       c=mk(pi); const s=mLine(c,rows,x=>x.r,'#60A5FA',v=>v.toFixed(0)+'%');
       s.createPriceLine({price:130,color:UP,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'130%'});
-      mLegend(pi,c,rows,x=>`維持率 <b class="${x.r<130?'pend':''}">${x.r.toFixed(2)}%</b>・融資（扣除 ETF）${fmt(x.b)} 億`); pi++;
+      mLegend(pi,c,rows,x=>`維持率 <b class="${x.r<130?'pend':''}">${x.r.toFixed(2)}%</b>${x.b==null?'':`・融資（扣除 ETF）${fmt(x.b)} 億`}`); pi++;
     }
     if(MC.length){
       const g=(x,a,b)=>x[a]?x[a][b]:null;
