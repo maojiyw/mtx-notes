@@ -143,7 +143,7 @@ python -m http.server 8765
 1. 登入 [Cloudflare](https://dash.cloudflare.com/) → **Workers & Pages** → **Create** → **Create Worker**，名稱例如 `taiex`，按 **Deploy**。
 2. 進入該 Worker → **Edit code**，把 `worker/taiex.js` 的內容整個貼上取代原本的程式，按 **Deploy**。
 3. 複製 Worker 網址（例如 `https://taiex.<你的帳號>.workers.dev`），瀏覽器打開應該會看到一段 JSON（`price` 為最新指數）。
-4. 把網址填入 `assets/app.js` 的 `LIVE_URL`，更新 `?v=` 版本號後推送。
+4. 把網址填入 `assets/app.js` 的 `LIVE_URL` 後推送。
 
 `worker/taiex.js` 只允許 `https://maojiyw.github.io` 與本機 `localhost` 讀取；網站換網址時記得修改 `ALLOW`。
 
@@ -151,4 +151,4 @@ python -m http.server 8765
 
 推送到 `main` 後，於 GitHub repo 的 **Settings → Pages** 將來源設為 `main` 分支根目錄（`/ (root)`）即可。
 
-修改 `assets/` 底下的檔案後，請把各頁面引用的 `?v=` 版本號一起改掉，避免瀏覽器使用快取的舊檔。
+資源檔（`assets/` 底下的 JS、CSS）**不加版本號**，修改後不需要動任何 HTML。GitHub Pages 對所有檔案設定 `Cache-Control: max-age=600`，推送後瀏覽器最多 10 分鐘就會拿到新版；急著看可以按 Ctrl+F5（Mac：Cmd+Shift+R）強制重新整理。本機預覽時若看到舊畫面，同樣強制重新整理即可。
