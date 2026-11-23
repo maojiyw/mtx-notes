@@ -54,6 +54,8 @@ function run_(force) {
     if (!tw) { Logger.log(d + ' 證交所沒有資料（休市或尚未公布）'); continue; }
     let tp = null; try { tp = fetchTpex_(d); } catch (e) { Logger.log(d + ' 櫃買讀取失敗：' + e); }
     Utilities.sleep(3000);
+    // 櫃買還沒公布：當天 23 點前先不寫，下個小時再試（避免留下上櫃空白列）
+    if (!tp && d === today && hour < 23) { Logger.log(d + ' 櫃買尚未公布，下個小時再試'); break; }
     const row = [d, '', ''].concat(
       [tw.loan, tw.loanChg, tw.short, tw.shortChg],
       tp ? [tp.loan, tp.loanChg, tp.short, tp.shortChg] : ['', '', '', '']);
