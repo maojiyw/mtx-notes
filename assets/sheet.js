@@ -139,5 +139,34 @@ window.MTXSheet = (function(){
     bpRedLine(S).forEach((x,t)=>{ if(x.date<'2012-01-01'||x.bp<x.thr) return; if(t-last>=10) out.push(x.date); last=t; });
     return out;
   }
-  return { load, asChips, bpRedLine, bpRedDays, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit` };
+  /* ---------------------------------------------------------------
+     信用交易試算表（另一份；Apps Script 每天自動更新，程式在 scripts/margin-sheet.gs）
+     回傳與舊 data/margin.json 相同的結構：{updated, ratio:[[日期,維持率,融資餘額扣除ETF]], credit:[{d,twse,tpex,etf}], etfs}
+     「維持率」玩股網擋國外連線，由人工每天填；「融資餘額扣除ETF」可能空白（null）。
+     --------------------------------------------------------------- */
+  const MARGIN_ID = '10ZWlFv1Yg5M1-1SWKuZ441YFYjxZ56K64x1XlUn7LCE';
+  const ETF_NAMES = { '00685L':'群益臺灣加權正2', '00631L':'元大台灣50正2' };
+  let marginPending=null;
+  function loadMargin(){
+    if(marginPending) return marginPending;
+    const u=`https://docs.google.com/spreadsheets/d/${MARGIN_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('信用交易')}`;
+    return marginPending=fetch(u,{cache:'no-cache'}).then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); }).then(t=>{
+      const [head,...rows]=parseCSV(t), H=head.map(norm), at=n=>H.indexOf(norm(n));
+      const v=(r,n)=>{ const i=at(n); if(i<0) return null; const s=String(r[i]||'').replace(/,/g,'').trim(); return s===''?null:+s; };
+      const grp=(r,p,u1,u2)=>{ const o={loan:v(r,p+'融資'+u1),loanChg:v(r,p+'資增減'+u1),short:v(r,p+'融券'+u2),shortChg:v(r,p+'券增減'+u2)}; return o.loan==null?null:o; };
+      const codes=head.map(h=>(norm(h).match(/^(\w+)融資\(張\)$/)||[])[1]).filter(Boolean);
+      const ratio=[], credit=[];
+      rows.forEach(r=>{ const d=String(r[0]||'').trim(); if(!/^\d{4}-\d\d-\d\d$/.test(d)) return;
+        const rt=v(r,'維持率(%)'); if(rt!=null) ratio.push([d,rt,v(r,'融資餘額扣除ETF(億)')]);
+        const etf={}; codes.forEach(c=>{ const e=grp(r,c,'(張)','(張)'); if(e) etf[c]=e; });
+        const tw=grp(r,'上市','(億)','(張)'); if(tw) credit.push({d,twse:tw,tpex:grp(r,'上櫃','(億)','(張)'),etf});
+      });
+      ratio.sort((a,b)=>a[0]<b[0]?-1:1); credit.sort((a,b)=>a.d<b.d?-1:1);
+      const etfs={}; codes.forEach(c=>etfs[c]=ETF_NAMES[c]||'');
+      const last=credit.length?credit[credit.length-1].d:'';
+      return {updated:last.replace(/-/g,'/'), ratio, credit, etfs};
+    }).catch(e=>{ marginPending=null; throw e; });
+  }
+  return { load, asChips, bpRedLine, bpRedDays, loadMargin, sheetUrl:`https://docs.google.com/spreadsheets/d/${ID}/edit`,
+           marginSheetUrl:`https://docs.google.com/spreadsheets/d/${MARGIN_ID}/edit` };
 })();

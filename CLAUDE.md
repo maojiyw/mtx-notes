@@ -62,12 +62,12 @@
 
 ## 信用交易（每日籌碼頁；2026-11-21 合併）
 
-- 資料檔 `data/margin.json`，由 `scripts/update-margin.ps1` 產生；GitHub Actions（`.github/workflows/update-margin.yml`）每個交易日台北 21:30（UTC 13:30）執行並 commit 到 `main`。資料沒變不會 commit；漏掉的日期下次自動補。
-- **大盤融資維持率（上市扣除 ETF）**：專案決定直接抓玩股網數字（公開資料算不出相同值；公開算法約是玩股網的 1/0.87）。來源 `https://www.wantgoo.com/stock/-ETFA/margin-trading/historical-lending-balance`（需 Referer 與 X-Requested-With 標頭），`marginRatio`×100＝維持率、`lendingBalance`÷1e5＝融資餘額（億）；只有 2024/11 起。GitHub 主機在國外，可能被擋，擋住時保留舊值。
+- **2026-11-23 專案決定：資料改放「信用交易」Google 試算表，不放 repo**（資料每天變動，放在程式碼裡會讓 commit 紀錄被資料洗版）。網站用 `assets/sheet.js` 的 `MTXSheet.loadMargin()` 讀取（gviz CSV，回傳與舊 `margin.json` 相同結構）。試算表內的 Apps Script（原始碼 `scripts/margin-sheet.gs`）每天台北 21:30、22:30、23:30 左右執行（Google 排程前後差 15 分鐘內；專案時區須設台北），抓證交所／櫃買寫入新的一列，補最近 10 天內漏掉的日期；櫃買晚公布時上櫃欄位先空白、之後補上。原本的 `data/margin.json`、`scripts/update-margin.ps1`、GitHub Actions 排程已移除（git 歷史中可找到）。
+- **大盤融資維持率（上市扣除 ETF）**：專案決定直接用玩股網數字（公開資料算不出相同值；公開算法約是玩股網的 1/0.87）。來源 `https://www.wantgoo.com/stock/-ETFA/margin-trading/historical-lending-balance`（需 Referer 與 X-Requested-With 標頭），`marginRatio`×100＝維持率、`lendingBalance`÷1e5＝融資餘額（億）；只有 2024/11 起。**玩股網擋國外連線（GitHub、Google 主機都回 403），所以維持率由人工每天填在試算表 B 欄**；C 欄融資餘額可留空，網站會略過。程式只填空白格，不覆蓋人工數字。
 - **每日信用交易統計**（格式參考 PTT 股票版每日的「信用交易統計」）：
   - 上市：證交所 `MI_MARGN?date=YYYYMMDD&selectType=ALL` 第一張表；資增減（億）＝融資金額(仟元) 今日－前日 ÷1e5，券增減（張）＝融券(交易單位) 今日－前日。
   - 上櫃：櫃買 `https://www.tpex.org.tw/www/zh-tw/margin/balance?date=YYYY%2FMM%2FDD&id=&response=json` 的 summary「融資金(仟元)」與「合計(張)」。
-  - ETF（00685L、00631L，在腳本 `$ETFS` 設定）：MI_MARGN 個股列的融資、融券今日餘額－前日餘額（張）；頁面計算連增／連減天數、近 5／20 日合計、最長連增／連減。
+  - ETF（00685L、00631L，在 `margin-sheet.gs` 的 `ETFS`／`HEAD` 與 `sheet.js` 的 `ETF_NAMES` 設定）：MI_MARGN 個股列的融資、融券今日餘額－前日餘額（張）；頁面計算連增／連減天數、近 5／20 日合計、最長連增／連減。
   - 玩股網「扣除 ETF」＝證交所 `selectType=STOCK`（融券 11/19 為 122,448 張，已核對）。
-- 證交所有頻率限制，請求間隔 3 秒；短時間請求太多會回 **307**（錯誤頁），要等一段時間再試。歷史已回補到 2014-01-02 起（2026-11-21 完成）；之後由 GitHub Actions 每日累加。2026 年的 7/10、10/23 等證交所查無資料的日期是休市（颱風假等），不是漏抓。
-- **2018 年以前的週六可能是補班交易日**（例如 2014-12-27、2016-01-30），腳本只在 2019 年起跳過週六。最初回補漏了 9 個補班日，用 `-Dates` 參數單獨補：`powershell -File scripts/update-margin.ps1 -Dates 2016-01-30,2016-06-04`。2026-11-21 補回 8 天；**2017-06-03 仍缺**：證交所對這一天的 MI_MARGN 一律回「因為安全性考量，您所執行的頁面無法呈現」（其他日期正常），之後可以再試一次。
+- 證交所有頻率限制，請求間隔 3 秒；短時間請求太多會回 **307**（錯誤頁），要等一段時間再試。歷史已回補到 2014-01-02 起（2026-11-21 完成）；之後由試算表的 Apps Script 每日累加。2026 年的 7/10、10/23 等證交所查無資料的日期是休市（颱風假等），不是漏抓。
+- **2018 年以前的週六可能是補班交易日**（例如 2014-12-27、2016-01-30），2026-11-21 已補回 8 天；**2017-06-03 仍缺**：證交所對這一天的 MI_MARGN 一律回「因為安全性考量，您所執行的頁面無法呈現」（其他日期正常）。要補的話直接在試算表插入一列。Apps Script 每天只看最近 10 天，週六一律跳過（2019 年起沒有週六補班）。

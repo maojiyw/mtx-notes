@@ -32,12 +32,8 @@
 │   ├── backtest.js     # 訊號回測計算引擎（沿用 backtest.py 的邏輯）
 │   ├── app.js          # 頁面渲染（主頁與復盤頁共用）
 │   └── style.css       # 樣式（深色主題、紅漲綠跌、RWD）
-├── data/
-│   └── margin.json     # 信用交易資料（GitHub Actions 每晚 21:30 自動更新）
 ├── scripts/
-│   └── update-margin.ps1  # 抓取信用交易資料的程式（PowerShell）
-├── .github/workflows/
-│   └── update-margin.yml  # 每晚 21:30 的自動更新排程
+│   └── margin-sheet.gs # 信用交易試算表的自動更新程式（Google Apps Script，貼在試算表裡執行）
 ├── worker/
 │   └── taiex.js        # Cloudflare Worker：轉發證交所即時大盤指數
 └── notes-pdf/          # 每週復盤原始 PDF
@@ -118,17 +114,17 @@ python -m http.server 8765
 
 ## 信用交易（每日籌碼頁）
 
-每日籌碼頁「信用交易」區塊讀取 `data/margin.json`，由 GitHub Actions 每個交易日晚上 21:30（台北時間）執行 `scripts/update-margin.ps1` 自動更新並 commit 到 `main`。
+每日籌碼頁「信用交易」區塊讀取**信用交易 Google 試算表**（`assets/sheet.js` 的 `MTXSheet.loadMargin()`）。試算表裡的 Apps Script（原始碼 `scripts/margin-sheet.gs`）每天台北時間 21:30、22:30、23:30 左右各執行一次，抓當天資料寫入，資料不再放在 repo 裡，也不會產生 commit。
 
 - **大盤融資維持率**：玩股網「上市・扣除 ETF 資券進出」的維持率與融資餘額（維持率由玩股網計算，公開資料無法重現同一數字）。
 - **每日信用交易統計**（格式參考 PTT 股票版每日的信用交易統計）：
   - 上市：證交所「融資融券餘額」全部的融資金額（資增減，億）與融券張數（券增減，張）
   - 上櫃：櫃買中心「上櫃股票融資融券餘額」的融資金（億）與融券合計（張）
   - ETF：00685L、00631L 的融資、融券今日餘額減前日餘額（張），並計算連續增減天數、近 5／20 日合計、最長連增／連減
-- 每次執行會自動補齊上次更新後缺少的交易日；資料沒有變動（休市、尚未公布）時不會 commit。
-- 要追蹤其他 ETF：在 `update-margin.ps1` 的 `$ETFS` 加上代號與名稱，下次更新起開始累積（舊日期可用 `-Since` 回補）。
-- 手動更新：GitHub repo 的 **Actions → 每日信用交易更新 → Run workflow**；或在本機執行 `powershell -File scripts/update-margin.ps1`。
-- 排程本身已要求寫入權限（`permissions: contents: write`）；若 Actions 的 commit 被拒絕，請 repo 擁有者到 **Settings → Actions → General** 確認 Actions 有啟用、Workflow permissions 沒有被限制為唯讀。
+- **維持率**：玩股網擋國外連線（Google 主機抓不到），由人工每天在試算表 B 欄填；C 欄「融資餘額扣除ETF」可留空。玩股網只有 2024/11 起的資料。
+- 每次執行會補齊最近 10 天內缺少的交易日；休市、尚未公布時不新增。櫃買比證交所晚公布時，該列上櫃欄位先空白，之後的執行再補上。人工填的數字不會被覆蓋。
+- 要追蹤其他 ETF：在 `margin-sheet.gs` 的 `ETFS` 與 `HEAD` 加上代號與 4 個欄位，並在 `sheet.js` 的 `ETF_NAMES` 加名稱。
+- 2014 年起的歷史資料由 `setup()` 一次匯入（來源是 repo 移除前最後一版的 `data/margin.json`）。
 - GitHub 的排程可能延遲幾分鐘到幾十分鐘；若某天沒更新，隔天執行時會一併補上。
 
 ## 即時大盤指數
