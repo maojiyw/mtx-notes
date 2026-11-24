@@ -242,23 +242,135 @@ function campaignLive(lo,peakIntra){
     kb.innerHTML=`<span>外資 BP 峰值（${md(peak.date)}）</span><b class="num" style="color:#C084FC">${yi(peak.bp)}</b><em>紅燈約 ${yi(thr)}，${lit?md(lit.date)+' 觸發':'未觸發'}</em>`;
   }).catch(()=>{});
 }
-/* 主頁每日短評：讀試算表工作表1「每日短評」欄，預設顯示最近 5 則，可展開更早的 */
+/* 主頁每日短評：讀試算表工作表1「每日短評」欄。最近 5 則直接顯示，更早的照月份收合（最新的月份展開）。
+   短評開頭寫「強度＋方向」（例如「強烈看多，」「中等看多，」「看空。」「中立：」）就列入主頁最下面的「判斷回測」；
+   強度是方向前面最多 4 個字（強烈、中等、輕微…），方向後面要接標點或空白（避免「多單減少」被當成看多） */
+const NOTE_TAG=/^\s*(?:[【\[「(（]\s*([^\s，,。：:、【】\[\]「」()（）]{0,4}?)(看多|看空|偏多|偏空|多|空|中立|中性|觀望)\s*[】\]」)）]|([^\s，,。：:、【】\[\]「」()（）]{0,4}?)(看多|看空|偏多|偏空|多|空|中立|中性|觀望)(?=[\s。：:，,、｜|．.!！]|$))[\s。：:，,、｜|．.!！]*/;
+const noteTag=t=>{ const s=String(t), m=s.match(NOTE_TAG); if(!m) return {dir:null,text:s};
+  const pre=m[1]??m[3]??'', w=m[2]||m[4], dir=/多/.test(w)?'多':/空/.test(w)?'空':'中立';
+  return {dir, label:pre+w, strength:pre, text:s.slice(m[0].length)}; };
+const escTxt=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pctJ=(v,d=2)=>v==null?'—':`${sign(v)}${v.toFixed(d)}%`;
+
+// 判斷回測：某天收盤 → N 個日曆天後（當天或之前最後一個交易日）收盤的漲跌（%）；還沒滿 N 天回傳 null
+const JUDGE_H=[7,30,90], JUDGE_T={7:1,30:2,90:3};   // 持平門檻（%）：漲跌在 ±門檻以內不算對錯
+const closeOn=(rows,date)=>{ let c=null; for(const r of rows){ if(r.date>date) break; c=r; } return c; };
+function fwdRet(rows,date,n){
+  const a=closeOn(rows,date), t=dayNumOf(date)+n;
+  if(!a||dayNumOf(rows[rows.length-1].date)<t) return null;
+  let b=a; for(const r of rows){ if(dayNumOf(r.date)>t) break; b=r; }
+  return b===a?null:(b.idx-a.idx)/a.idx*100;
+}
+// 對錯：多＝漲超過門檻、空＝跌超過門檻、中立＝漲跌都在門檻以內；多／空在門檻以內＝持平（不計）
+function judge(dir,r,n){
+  if(r==null) return null; const t=JUDGE_T[n];
+  if(dir==='中立') return Math.abs(r)<=t?'ok':'ng';
+  const s=dir==='空'?-r:r; return s>t?'ok':s<-t?'ng':'flat';
+}
+const JMARK={ok:'<b class="j-ok">✓</b>',ng:'<b class="j-ng">✗</b>',flat:'<span class="dim">持平</span>'};
+const jCell=(dir,r,n)=>r==null?'<span class="pend">未到</span>':`<span class="${cls(r)}">${pctJ(r)}</span> ${JMARK[judge(dir,r,n)]}`;
+const avgArr=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+// items：[{dir:'多'|'空'|'中立', r:{7,30,90}}]
+function judgeStats(items,n){
+  const done=items.filter(x=>x.r[n]!=null), cnt=(dir,v)=>done.filter(x=>judge(dir||x.dir,x.r[n],n)===v).length;
+  const ok=cnt(null,'ok'), ng=cnt(null,'ng'), bok=cnt('多','ok'), bng=cnt('多','ng');
+  const dirs=done.filter(x=>x.dir!=='中立');
+  return {n:done.length, pending:items.length-done.length, ok, ng, flat:done.length-ok-ng,
+    hit:ok+ng?ok/(ok+ng):null, bull:bok+bng?bok/(bok+bng):null,
+    ev:avgArr(dirs.map(x=>x.dir==='空'?-x.r[n]:x.r[n])), evBull:avgArr(dirs.map(x=>x.r[n]))};
+}
+const hitTxt=v=>v==null?'—':`${(v*100).toFixed(0)}%`;
+const JUDGE_MIN=30;   // 少於這個數字就標「樣本不足」
+function judgeTable(items,labels){
+  return `<div class="tscroll"><table class="t bt jt"><thead><tr><th>期間</th><th>已到期</th><th>對</th><th>錯</th><th>持平</th><th>命中率</th><th>永遠看多<br>命中率</th><th>照判斷<br>平均報酬</th><th>永遠看多<br>平均報酬</th></tr></thead><tbody>
+    ${JUDGE_H.map(n=>{ const s=judgeStats(items,n);
+      return `<tr><td>${labels[n]}<span class="dim">（${n} 天・±${JUDGE_T[n]}%）</span></td><td>${s.n}${s.pending?`<span class="dim">（未到 ${s.pending}）</span>`:''}</td><td>${s.ok}</td><td>${s.ng}</td><td>${s.flat}</td>
+        <td><b>${hitTxt(s.hit)}</b>${s.n&&s.n<JUDGE_MIN?'<span class="pend">樣本不足</span>':''}</td><td>${hitTxt(s.bull)}</td>
+        <td class="${s.ev==null?'':cls(s.ev)}">${pctJ(s.ev)}</td><td class="${s.evBull==null?'':cls(s.evBull)}">${pctJ(s.evBull)}</td></tr>`; }).join('')}
+  </tbody></table></div>`;
+}
+
 function dailyNotes(){
   const S=window.MTXSheet, box=$('#notes'), sec=$('#notesSec'); if(!S||!box||!sec) return;
-  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   S.load().then(d=>{
-    const N=d.rows.filter(r=>r.note).reverse(); if(!N.length) return;
-    const SHOW=5; let all=false;
-    const item=(r,i)=>`<div class="card nitem${i===0?' latest':''}">
+    const rows=d.rows, N=rows.filter(r=>r.note).reverse(); if(!N.length) return;
+    const SHOW=5; let open=false;
+    const item=(r,i)=>{ const {dir,label,text}=noteTag(r.note);
+      const res=dir?`<div class="nj">${JUDGE_H.map(n=>`<span>${n} 天後 ${jCell(dir,fwdRet(rows,r.date,n),n)}</span>`).join('')}</div>`:'';
+      return `<div class="card nitem${i===0?' latest':''}">
         <div class="d"><b>${r.date.replace(/-/g,'/')}</b><em>${weekday(r.date)}</em><span class="num ${cls(r.chg)}">${fmt(r.idx)}　${sign(r.pct)}${r.pct==null?'—':r.pct.toFixed(2)}%</span></div>
-        <p>${esc(r.note)}</p></div>`;
+        <div><p>${dir?`<span class="ntag ntag-${dir==='多'?'up':dir==='空'?'down':'flat'}">${escTxt(label)}</span>`:''}${escTxt(text)}</p>${res}</div></div>`; };
+    // 更早的短評：依月份分組，最新的月份展開
+    const months=[]; N.slice(SHOW).forEach((r,k)=>{ const m=r.date.slice(0,7); let g=months[months.length-1]; if(!g||g.m!==m) months.push(g={m,list:[]}); g.list.push([r,k+SHOW]); });
+    const older=()=>months.map((g,k)=>`<details class="nmonth"${k?'':' open'}><summary>${g.m.replace('-','/')}<span class="dim">（${g.list.length} 則）</span></summary><div class="nlist">${g.list.map(([r,i])=>item(r,i)).join('')}</div></details>`).join('');
     const draw=()=>{
-      const list=all?N:N.slice(0,SHOW);
-      box.innerHTML=list.map(item).join('')+(N.length>SHOW?`<button class="nmore" type="button">${all?'收起，只看最近 '+SHOW+' 則':'看更早的短評（共 '+N.length+' 則）'}</button>`:'');
-      const b=box.querySelector('.nmore'); if(b) b.onclick=()=>{ all=!all; draw(); };
+      box.innerHTML=N.slice(0,SHOW).map(item).join('')+(months.length?`<button class="nmore" type="button">${open?'收起更早的短評':`看更早的短評（共 ${N.length-SHOW} 則，依月份分類）`}</button>${open?older():''}`:'');
+      const b=box.querySelector('.nmore'); if(b) b.onclick=()=>{ open=!open; draw(); };
     };
     $('#notesCount').textContent=`最新在最上面・最近更新 ${N[0].date.replace(/-/g,'/')}`;
     sec.hidden=false; draw();
+  }).catch(()=>{});
+}
+
+/* 主頁最下面「判斷回測」：
+   1. 每日短評：開頭標「多／空／中立」的短評，看之後 7／30／90 天（日曆天）的漲跌對不對。
+   2. 每週復盤：每篇復盤的部位比上一篇高＝加碼（看多）、低＝減碼（看空），看復盤日之後的漲跌；並比較「照復盤部位」和「一直抱 1 倍」 */
+const levOf=s=>{ const p=String(s||'').split('→').pop(); if(/清倉/.test(p)) return 0; const m=p.match(/([\d.]+)\s*(x|%)/i); return m?(m[2]==='%'?+m[1]/100:+m[1]):null; };
+const LEV_EPS=0.15;   // 部位變化小於這個倍數算「維持」
+function judgeSec(){
+  const S=window.MTXSheet, el=$('#judge'), sec=$('#judgeSec'); if(!S||!el||!sec) return;
+  S.load().then(d=>{
+    const rows=d.rows, last=rows[rows.length-1];
+    // 1. 每日短評
+    const notes=rows.filter(r=>r.note).map(r=>({date:r.date,...noteTag(r.note)})).filter(x=>x.dir);
+    notes.forEach(x=>{ x.r={}; JUDGE_H.forEach(n=>x.r[n]=fwdRet(rows,x.date,n)); });
+    const groupBy=(list,key)=>{ const m=new Map(); list.forEach(x=>{ const k=key(x); if(!m.has(k)) m.set(k,[]); m.get(k).push(x); }); return [...m]; };
+    const cnt={多:0,空:0,中立:0}; notes.forEach(x=>cnt[x.dir]++);
+    // 分組命中率（每個月／每種強度）：看 7、30 天，和同一批日子「永遠看多」比
+    const grpTable=(head,groups)=>`<div class="tscroll"><table class="t bt jt"><thead><tr><th>${head}</th><th>則數</th>${JUDGE_H.slice(0,2).map(n=>`<th>${n} 天命中率</th><th>${n} 天永遠看多</th>`).join('')}</tr></thead><tbody>
+        ${groups.map(([k,list])=>`<tr><td>${k}</td><td>${list.length}</td>${JUDGE_H.slice(0,2).map(n=>{ const s=judgeStats(list,n); return `<td><b>${s.n?hitTxt(s.hit):'<span class="pend">未到</span>'}</b></td><td>${s.n?hitTxt(s.bull):'—'}</td>`; }).join('')}</tr>`).join('')}
+      </tbody></table></div>`;
+    const ORDER=['多','空','中立'];
+    const STR=['強烈','中等','輕微',''], rk=s=>{ const i=STR.indexOf(s); return i<0?STR.length:i; };
+    const byLabel=groupBy(notes,x=>x.label).sort((a,b)=>ORDER.indexOf(a[1][0].dir)-ORDER.indexOf(b[1][0].dir)||rk(a[1][0].strength)-rk(b[1][0].strength));
+    const notesHtml=notes.length?`
+      <p class="bt-note">已標方向的短評 ${notes.length} 則（看多 ${cnt.多}・看空 ${cnt.空}・中立 ${cnt.中立}）。</p>
+      ${judgeTable(notes,{7:'一週',30:'一個月',90:'一季'})}
+      <h3 class="bt-h3">依強度（「強烈」有沒有比「中等」準？）</h3>${grpTable('判斷',byLabel)}
+      <h3 class="bt-h3">每個月的命中率（看有沒有進步）</h3>${grpTable('月份',groupBy(notes,x=>x.date.slice(0,7).replace('-','/')).reverse())}`
+      :'<p class="bt-note">還沒有標方向的短評。短評開頭寫「強度＋方向」（例如「強烈看多，」「中等看空，」「中立：」），就會列入這裡。</p>';
+
+    // 2. 每週復盤的部位
+    const R=D.reviews.slice().reverse().map(r=>({r,L:levOf(r.position)})).filter(x=>x.L!=null);
+    R.forEach((x,i)=>{ const p=i?R[i-1].L:null, dL=p==null?null:x.L-p;
+      x.act=dL==null?'起點':dL>=LEV_EPS?'加碼':dL<=-LEV_EPS?'減碼':'維持';
+      x.dir=x.act==='加碼'?'多':x.act==='減碼'?'空':null;
+      x.close=closeOn(rows,x.r.date); x.ret={}; JUDGE_H.forEach(n=>x.ret[n]=fwdRet(rows,x.r.date,n)); });
+    const acts=R.filter(x=>x.dir).map(x=>({dir:x.dir,r:x.ret}));
+    // 照部位 vs 一直抱 1 倍：兩篇復盤之間用前一篇的部位（簡化：不含週中買賣與正 2 每日重設）
+    let eq=1, bh=1;
+    R.forEach((x,i)=>{ const a=x.close, b=i<R.length-1?R[i+1].close:last; if(!a||!b||b.date<=a.date) return; const r=b.idx/a.idx-1; eq*=1+x.L*r; bh*=1+r; });
+    const avgL=avgArr(R.slice(0,-1).map(x=>x.L));
+    const revHtml=`
+      <p class="bt-note">復盤 ${R.length} 篇：加碼 ${R.filter(x=>x.act==='加碼').length} 次、減碼 ${R.filter(x=>x.act==='減碼').length} 次、維持 ${R.filter(x=>x.act==='維持').length} 次。部位比上一篇高 ${LEV_EPS} 倍以上算加碼（看多）、低 ${LEV_EPS} 倍以上算減碼（看空），從復盤日收盤開始算（實際買賣可能在週中）。</p>
+      ${judgeTable(acts,{7:'一週',30:'一個月',90:'一季'})}
+      <div class="kpis k3 jk">
+        <div class="kpi"><span>照復盤部位</span><b class="num ${cls(eq-1)}">${pctJ((eq-1)*100,1)}</b><em>${md(R[0].r.date)} 起，到 ${md(last.date)}</em></div>
+        <div class="kpi"><span>一直抱 1 倍</span><b class="num ${cls(bh-1)}">${pctJ((bh-1)*100,1)}</b><em>同期間加權指數</em></div>
+        <div class="kpi"><span>平均部位</span><b class="num">${avgL==null?'—':avgL.toFixed(2)+' 倍'}</b><em>各篇復盤部位的平均</em></div>
+      </div>
+      <div class="tscroll"><table class="t bt jt"><thead><tr><th>復盤日</th><th>部位</th><th>倍數</th><th>動作</th>${JUDGE_H.map(n=>`<th>${n} 天後</th>`).join('')}</tr></thead><tbody>
+        ${R.slice().reverse().map(x=>`<tr><td><a href="${reviewUrl(x.r)}">${x.r.date.replace(/-/g,'/')}</a></td><td class="tx">${escTxt(x.r.position)}</td><td>${x.L.toFixed(2)}</td>
+          <td class="${x.act==='加碼'?'up':x.act==='減碼'?'down':''}">${x.act}</td>${JUDGE_H.map(n=>`<td>${x.dir?jCell(x.dir,x.ret[n],n):x.ret[n]==null?'<span class="pend">未到</span>':`<span class="${cls(x.ret[n])}">${pctJ(x.ret[n])}</span>`}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div>`;
+
+    el.innerHTML=`
+      <div class="card jcard"><h3>每日短評：看多看空準不準？</h3>${notesHtml}</div>
+      <div class="card jcard"><h3>每週復盤：加減碼之後漲還是跌？</h3>${revHtml}</div>
+      <p class="bt-note">怎麼算：日數一律用日曆天，第 N 天沒開盤就用之前最後一個交易日的收盤。漲跌在 ±門檻（一週 1%、一個月 2%、一季 3%）以內算「持平」，不算對錯；「中立」則是漲跌都在門檻以內才算對。
+        <b>命中率要和「永遠看多」比</b>：台股長期偏多，每天都說看多也會有不低的命中率，贏過它才代表判斷有加分。平均報酬＝照判斷做多／做空的平均漲跌（中立不算）。
+        樣本少於 ${JUDGE_MIN} 次時標「樣本不足」；一季的期間彼此重疊很多，實際上獨立的判斷很少，只當參考。照復盤部位＝兩篇復盤之間都用前一篇的部位倍數乘上指數漲跌（簡化，不含週中買賣與正 2 每日重設）。</p>`;
+    sec.hidden=false;
   }).catch(()=>{});
 }
 function renderHome(){
@@ -284,6 +396,7 @@ function renderHome(){
   dailyCard($('#daily'));
   setTimeout(()=>campaignLive(lo,peakIntra));
   setTimeout(dailyNotes);
+  setTimeout(judgeSec);
   $('#campaign').innerHTML = `<div class="card"><div class="kpis k6">
       <div class="kpi"><span>前高（${md(D.campaign.high.date)} 收盤）</span><b class="num">${fmt(hi)}</b><em>10 月初高檔，散戶 FOMO</em></div>
       <div class="kpi"><span>波段低點（${md(D.campaign.low.date)} 盤中）</span><b class="num down">${fmt(lo)}</b><em>自最高點 ${D.campaign.drawdown}%</em></div>
