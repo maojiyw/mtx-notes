@@ -8,7 +8,7 @@ window.MTXSheet = (function(){
   'use strict';
   const ID = '1J-vhV9ahpiZejIJ0pz565KBiptDfxJX3';
   const url = sheet => `https://docs.google.com/spreadsheets/d/${ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`;
-  const CACHE_KEY = 'mtx-sheet-v5', CACHE_MS = 10*60*1000;
+  const CACHE_KEY = 'mtx-sheet-v6', CACHE_MS = 10*60*1000;
 
   // 欄名（去掉空白後比對：先完全相同，再比對結尾）
   const MAIN = {
@@ -17,6 +17,7 @@ window.MTXSheet = (function(){
     rtLong:'散戶看多', rtShort:'散戶看空', rtLongPct:'多單持倉占比百分位', rtShortPct:'空單持倉占比百分位',
     mxLong:'微台看多', mxShort:'微台看空',
     sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sigAmp:'幅度', sigStrong:'強烈落底', sig3:'連續三天期貨逆增',
+    bcRel:'外資(BC)OP未平倉金額與結算比', bpRel:'外資(BP)OP未平倉金額與結算比',   // BC紫爆／BP紫爆用（結算日歸零，代表上次結算以來的累積）
     note:'每日短評'
   };
   const TEXT = ['note'];   // 文字欄，不轉數字

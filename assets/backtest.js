@@ -208,14 +208,29 @@ window.MTXBacktest = (function(){
     return { events: desc(events, '首日日期'), pullbacks: desc(pulls, '突破日期'), summary, excess, byYear, byRegime };
   }
 
+  /* 逐日「當天以前（含當天）前 p」：值 ≥ 當天以前所有資料由大到小第 k 大，k＝max(1, floor(筆數×p))，2012 年起判斷（同 BP紅燈）
+     val(r)：取值的函式（null 不列入）。回傳每個亮燈日（lit）與冷卻 10 個交易日後的首日（kept） */
+  function pctDetect(mk, val, p){
+    const sorted = [], lit = []; let lastVal = null, lastThr = null;
+    mk.rows.forEach((r, i) => {
+      const v = val(r); if(v == null || !isFinite(v)) return;
+      let lo = 0, hi = sorted.length; while(lo < hi){ const md = (lo+hi) >> 1; if(sorted[md] > v) lo = md+1; else hi = md; } sorted.splice(lo, 0, v);
+      if(mk.d[i] < BP_START) return;
+      const thr = sorted[Math.max(1, Math.floor(sorted.length * p)) - 1]; lastVal = v; lastThr = thr;
+      if(v >= thr) lit.push(i);
+    });
+    const kept = []; let last = -1e9;
+    lit.forEach(i => { if(i - last >= BP_COOLDOWN) kept.push(i); last = i; });
+    return { raw: kept.length, kept, removed: [], lit, lastVal, lastThr };   // lastVal／lastThr：最後一天的值與門檻
+  }
   /* ---------- 訊號定義（可擴充） ---------- */
   const flagO = v => v != null && String(v).trim().toUpperCase() === 'O';
   const SIGNALS = [
-    { id: 'strong', name: '強烈落底', label: '強烈落底（BE欄）', desc: '每日籌碼試算表「強烈落底」欄（BE 欄）標記 O 的交易日',
+    { id: 'strong', name: '強烈落底', label: '強烈落底（BE欄）', desc: '每日籌碼試算表「強烈落底」欄（BE 欄）標記 O 的交易日', kind: 'low',
       detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if(flagO(r.sigStrong)) raw.push(i); });
         const kept = dedupe(raw, COOLDOWN);
         return { raw: raw.length, kept, removed: raw.filter(i => !kept.includes(i)).map(i => ctx.mk.d[i]).sort().reverse() }; } },
-    { id: 'bp', name: 'BP紅燈', label: 'BP紅燈（歷史前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷',
+    { id: 'bp', name: 'BP極端過熱紅燈', label: 'BP極端過熱紅燈（前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.02,
       detect(ctx){
         // 逐日動態判斷：當天外資BP金額 ≥ 當天以前（含當天）所有資料由大到小第 k 大，k = max(1, floor(筆數 × 2%))
         const S = ctx.bpSeries, lit = [], sorted = [];
@@ -230,6 +245,17 @@ window.MTXBacktest = (function(){
         const kept = first.map(t => ctx.mk.idxOf.get(S[t].date)).filter(i => i != null);
         return { raw: kept.length, kept, removed: [] };
       } },
+    // 以下 2026-11-24 新增：BP 系列（大跌時的極端行情）與 BC 系列（高檔或暴漲時）；判斷方式同 BP紅燈（逐日、2012 起、冷卻 10 個交易日）
+    { id: 'bpv', name: 'BP過熱紫燈', label: 'BP過熱紫燈（前 10%）', desc: '外資 BP 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.10,
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bp, 0.10); } },
+    { id: 'bpx', name: 'BP紫爆', label: 'BP紫爆（W 欄前 1%）', desc: '外資(BP)OP未平倉金額與結算比（W 欄）達到當天以前所有資料的前 1%', kind: 'low', col: '外資(BP)OP未平倉金額與結算比（工作表1 W 欄）', pct: 0.01,
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bpRel, 0.01); } },
+    { id: 'bcy', name: 'BC過熱黃燈', label: 'BC過熱黃燈（前 10%）', desc: '外資 BC 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'high', col: '外資 BC 金額（Sheet1 H 欄）', pct: 0.10,
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bc, 0.10); } },
+    { id: 'bcg', name: 'BC極端過熱綠燈', label: 'BC極端過熱綠燈（前 1%）', desc: '外資 BC 金額達到當天以前所有資料的前 1%，逐日判斷', kind: 'high', col: '外資 BC 金額（Sheet1 H 欄）', pct: 0.01,
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bc, 0.01); } },
+    { id: 'bcx', name: 'BC紫爆', label: 'BC紫爆（T 欄前 1%）', desc: '外資(BC)OP未平倉金額與結算比（T 欄）達到當天以前所有資料的前 1%', kind: 'high', col: '外資(BC)OP未平倉金額與結算比（工作表1 T 欄）', pct: 0.01,
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bcRel, 0.01); } },
   ];
 
   /* ---------- 最早第幾天起勝率穩定 100%（BP紅燈用） ----------
@@ -307,6 +333,59 @@ window.MTXBacktest = (function(){
     });
   }
 
+  /* ---------- BC 系列：高檔觀測（亮燈之後大盤怎麼走） ----------
+     BC 燈號是高檔／暴漲的標記，亮燈期間常常還在漲，所以除了「首日」，也比較不同的起點：
+     每個亮燈日、熄燈（前一個交易日亮、當天沒亮，當天就知道）、連續亮 K 天以上後熄燈、亮燈後外資期貨淨單轉空。
+     都只用當天以前就知道的資訊（「一段亮燈的最後一天」要等之後沒再亮才知道，等於偷看未來，不用）。 */
+  const HW_HOLDS = [7, 14, 30, 60, 120];
+  function hwStats(mk, idxs, base){
+    const o = { n: idxs ? idxs.length : mk.n, h: {} };
+    HW_HOLDS.forEach(N => {
+      const v = (idxs ? idxs.map(i => holdOutcome(mk, i, N)) : base(N)).filter(Boolean);
+      o.h[N] = { n: v.length, avg: v.length ? pct(mean(v.map(x => x[0]))) : null, down: v.length ? pct(v.filter(x => x[0] < 0).length / v.length) : null };
+    });
+    const v = (idxs ? idxs.map(i => holdOutcome(mk, i, 120)) : base(120)).filter(Boolean);
+    o.crash = v.length ? pct(v.filter(x => x[2] <= -0.10).length / v.length) : null;   // 120 天內曾跌 10% 以上
+    o.crashN = v.filter(x => x[2] <= -0.10).length; o.doneN = v.length;
+    return o;
+  }
+  function highWatch(mk, lit, kept, base, extra){
+    const on = new Set(lit), offs = [];
+    for(let i = 1; i < mk.n; i++) if(on.has(i-1) && !on.has(i)){ let k = 0; for(let t = i-1; t >= 0 && on.has(t); t--) k++; offs.push([i, k]); }
+    const cool = a => { const out = []; let last = -1e9; a.forEach(i => { if(i - last >= BP_COOLDOWN) out.push(i); last = i; }); return out; };
+    const rows = [
+      { key: 'first', name: '亮燈首日（冷卻 10 個交易日）', idxs: kept },
+      { key: 'every', name: '每個亮燈日', idxs: lit },
+      { key: 'off', name: '熄燈（隔天沒亮，冷卻 10 個交易日）', idxs: cool(offs.map(x => x[0])) },
+      ...[3, 5, 10].map(K => ({ key: 'off' + K, name: `連續亮 ${K} 天以上後熄燈`, idxs: offs.filter(x => x[1] >= K).map(x => x[0]) })),
+    ];
+    // 亮燈後 20 個交易日內，外資期貨淨未平倉由多轉空（前一天 ≥ 0、當天 < 0）
+    const fi = mk.rows.map(r => r.fiOI), turn = [];
+    for(let i = 1; i < mk.n; i++){ if(fi[i] == null || fi[i-1] == null || !(fi[i-1] >= 0 && fi[i] < 0)) continue;
+      let near = false; for(let t = i; t >= 0 && i - t <= 20; t--) if(on.has(t)){ near = true; break; }
+      if(near) turn.push(i); }
+    rows.push({ key: 'fiturn', name: '亮燈後 20 個交易日內，外資期貨淨單轉空', idxs: cool(turn) });
+    (extra || []).forEach(x => rows.push(x));
+    rows.forEach(r => Object.assign(r, hwStats(mk, r.idxs)));
+    const baseRow = { key: 'base', name: '無條件基準（所有交易日）', ...hwStats(mk, null, base) };
+    // 2012 年起跌 10% 以上的高點（收盤）：高點前 90 天內有沒有亮燈
+    const s0 = mk.d.findIndex(d => d >= BP_START), tops = [];
+    let pk = s0, dd = false, lo = null;
+    for(let i = s0; i < mk.n; i++){
+      if(!dd && mk.c[i] > mk.c[pk]) pk = i;
+      if(!dd && mk.c[i] / mk.c[pk] - 1 <= -0.10){ dd = true; lo = i; }
+      if(dd){ if(mk.c[i] < mk.c[lo]) lo = i; if(mk.c[i] >= mk.c[pk]){ tops.push({ i: pk, lo, recovered: i }); dd = false; pk = i; } }
+    }
+    if(dd) tops.push({ i: pk, lo, recovered: null });
+    const topRows = tops.map(t => { let near = null; for(let k = t.i; k >= 0 && mk.days(k, t.i) <= 90; k--) if(on.has(k)){ near = k; break; }
+      return { date: mk.d[t.i], close: mk.c[t.i], low: mk.d[t.lo], drop: pct(mk.c[t.lo] / mk.c[t.i] - 1), lit: near != null, before: near == null ? null : mk.days(near, t.i), litDate: near == null ? null : mk.d[near] }; });
+    // 目前狀態：最後一天有沒有亮、連續亮幾天、最近 60 個交易日亮幾天
+    let streak = 0; for(let t = mk.n - 1; t >= 0 && on.has(t); t--) streak++;
+    let recent = 0; for(let t = Math.max(0, mk.n - 60); t < mk.n; t++) if(on.has(t)) recent++;
+    const lastLit = lit.length ? mk.d[lit[lit.length - 1]] : null;
+    return { rows, base: baseRow, tops: topRows.reverse(), now: { on: on.has(mk.n - 1), streak, recent, lastLit } };
+  }
+
   /* ---------- 入口 ---------- */
   // data：MTXSheet.load() 的結果；end：只用這天以前的資料（驗算用，YYYY-MM-DD）
   function run(data, end){
@@ -321,19 +400,22 @@ window.MTXBacktest = (function(){
       const turn = sig.id === 'bp' ? turnPositive(mk, det.kept, 60) : null;
       const S = turn && turn.stable;
       const uniq = a => [...new Set(a.filter(Boolean))].sort((x, y) => x - y);
-      const holds = turn ? uniq([...HOLD_DAYS, S, 120]) : HOLD_DAYS;
-      const regimeHolds = turn ? uniq([...REGIME_HOLDS, S, 120]) : REGIME_HOLDS;
+      const holds = turn ? uniq([...HOLD_DAYS, S, 120]) : sig.pct && sig.id !== 'bp' ? uniq([...HOLD_DAYS, 120]) : HOLD_DAYS;
+      const regimeHolds = turn ? uniq([...REGIME_HOLDS, S, 120]) : sig.pct && sig.id !== 'bp' ? uniq([...REGIME_HOLDS, 120]) : REGIME_HOLDS;
       const res = analyze(mk, det.kept, base, holds, regimeHolds);
       // 走勢（中途有沒有拉回）：觀察期 60／90／120 天（頁面可切換）
       const paths = turn ? Object.fromEntries([60, 90, 120].map(H => [H, H === 60 ? turn : turnPositive(mk, det.kept, H)])) : null;
       // 出場方式比較：觀察期 120／180／250／365 天各算一次（頁面可切換）
       const exits = turn ? Object.fromEntries([120, 180, 250, 365].map(C => [C, exitRules(mk, det.kept, S, C)])) : null;
       const flatCmp = turn ? flatCompare(mk, det.kept, uniq([S, 60, 120]), 30) : null;
+      // BC 系列：高檔觀測；黃燈另外附「BC÷SC 前 10%」當參考（排除大盤上漲讓 BC 金額變大的影響）
+      const extra = sig.id === 'bcy' ? [{ key: 'ratio', name: '參考：BC÷SC 前 10%（首日）', idxs: pctDetect(mk, r => r.bc != null && r.sc > 0 ? r.bc / r.sc : null, 0.10).kept }] : [];
+      const hw = sig.kind === 'high' ? Object.assign(highWatch(mk, det.lit, det.kept, base, extra), { lastVal: det.lastVal, lastThr: det.lastThr }) : null;
       return { id: sig.id, name: sig.name, label: sig.label, desc: sig.desc || '', raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept,
-        holds, regimeHolds, turn, paths, exits, flatCmp, ...res };
+        holds, regimeHolds, turn, paths, exits, flatCmp, hw, kind: sig.kind, col: sig.col, pct: sig.pct, ...res };
     });
     return { mk, signals, first: mk.d[0], last: mk.d[mk.n-1], days: mk.n };
   }
 
-  return { run, SIGNALS, HOLD_DAYS, COOLDOWN, holdOutcome, turnPositive, exitRules, flatCompare };
+  return { run, SIGNALS, HOLD_DAYS, COOLDOWN, holdOutcome, turnPositive, exitRules, flatCompare, highWatch };
 })();
