@@ -487,3 +487,9 @@ table.t.bt tr.flash td{animation:btflash 1.6s ease-out}
   .nitem .d b{display:inline}
   .nitem .d em{display:inline}
 }
+
+/* BP紅燈：穩定翻正的槓桿倍數輸入 */
+.bt-lev{justify-content:flex-start;align-items:center;gap:10px;padding:4px 0 8px}
+.bt-lev label{font-size:13px;color:var(--muted)}
+.bt-lev input{font:inherit;font-family:var(--mono);width:64px;color:var(--text);background:var(--card2);border:1px solid var(--line2);border-radius:7px;padding:3px 6px;color-scheme:dark}
+.bt-lev .bt-note{margin:0}

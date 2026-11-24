@@ -828,6 +828,32 @@ function renderSignals(){
         <div><span>30 日觀察窗口</span><b class="num">${win}</b><em>${e['突破日期']==='未突破'?`未突破前高 ${fmt(e['前高收盤'])}`:`${dt(e['突破日期'])} 已突破`}</em></div>
       </div></div>`;
     };
+    // BP紅燈：60 天以前，最早第幾天起勝率穩定 100%（引擎在 backtest.js 的 turnPositive）
+    const turnRows=(s,L)=>s.turn.rows.slice().reverse().map(r=>{
+      const st=r.stable!=null?(r.done?`第 ${r.stable} 天`:`第 ${r.stable} 天起（未滿 ${s.turn.H} 天）`):(r.done?`<span class="down">${s.turn.H} 天內未翻正</span>`:`<span class="pend">尚未翻正（已 ${r.avail} 天）</span>`);
+      const lw=r.lowI===r.i?'—':dt(mk.d[r.lowI]), lp=r.low*100;
+      return `<tr><td class="r">${dt(r.date)}</td><td class="r">${fmt(r.close)}</td><td class="r">${r.first!=null?`第 ${r.first} 天`:'<span class="pend">未翻正</span>'}</td><td class="r"><b>${st}</b></td>
+        <td class="r">${lw}</td><td class="r">${r.lowI===r.i?'—':r.lowDays}</td><td class="r ${cls(lp)}">${lp<0?lp.toFixed(2)+'%':'—'}</td><td class="r ${cls(lp)}"><b>${lp<0?(lp*L).toFixed(2)+'%':'—'}</b></td>
+        <td class="r ${r.retH!=null?cls(r.retH):''}">${r.retH!=null?btFmt(r.retH*100,'pct'):'<span class="pend">未完成</span>'}</td><td class="r ${r.retH!=null?cls(r.retH):''}">${r.retH!=null?btFmt(r.retH*100*L,'pct'):'—'}</td></tr>`;
+    }).join('');
+    const turnSec=s=>{
+      const T=s.turn; if(!T||!T.rows.length) return '';
+      const D=T.rows.filter(r=>r.done), late=D.filter(r=>r.stable===T.stable).map(r=>dt(r.date));
+      const steps=[]; T.win.forEach((w,k)=>{ if(w!==(k?T.win[k-1]:undefined)) steps.push([k+1,w]); });
+      const worst=D.reduce((a,r)=>r.low<a.low?r:a,D[0]||{low:0});
+      return `
+        <h2 class="bt-h2" id="${s.id}-turn">${T.H} 天以前，最早從第幾天起勝率就達到 100%？</h2>
+        <p class="bt-lead">已滿 ${T.H} 天的 ${bv(T.done)} 次訊號：${T.stable!=null?`<b>從第 <span class="num">${T.stable}</span> 天起</b>一路到第 ${T.H} 天，勝率都維持 100%（最晚翻正的是 ${late.join('、')}）。${T.firstAll&&T.firstAll<T.stable?`第一次碰到 100% 是第 ${T.firstAll} 天，但之後又有訊號跌回首日以下，不算穩定。`:''}`:`到第 ${T.H} 天勝率仍未達 100%。`}
+          翻正前最大的浮虧是 ${worst.date?`${dt(worst.date)} 的 ${bv(worst.low*100,'pct')}`:'—'}。樣本只有 ${T.done} 次，只能當個案參考。</p>
+        <p class="bt-note">第 N 天＝首日後第 N 個日曆天（含）以前最後一個交易日的收盤；那天以前還沒有交易日就算 0（不算贏）。首次翻正＝第一次收盤高於首日；穩定翻正＝從這天起到第 ${T.H} 天都高於首日。最大浮虧＝穩定翻正以前的最低收盤相對首日收盤（只看收盤、不含盤中）；還沒翻正的看到資料最後一天。</p>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">第 N 天起</th>${steps.map(([n])=>`<th class="r">${n}</th>`).join('')}</tr></thead>
+          <tbody><tr><td class="r">勝率</td>${steps.map(([,w])=>`<td class="r${w===1?' up':''}">${w==null?'—':Math.round(w*T.done)+'/'+T.done}</td>`).join('')}</tr></tbody></table></div>
+        <p class="bt-note bt-after">上表只列勝率有變化的天數（所有已滿 ${T.H} 天的訊號合起來）。</p>
+        <div class="bt-chartbar bt-lev"><label>槓桿倍數 <input type="number" id="${s.id}-lev" value="2" min="0.1" max="10" step="0.1" inputmode="decimal"></label><span class="bt-note">浮虧與報酬直接乘上倍數（簡化計算，不含正 2 每日重設、利息與追繳）</span></div>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">首日日期</th><th class="r">首日收盤</th><th class="r">首次翻正</th><th class="r">穩定翻正</th>
+          <th class="r">翻正前最低日</th><th class="r">到達最低(天)</th><th class="r">最大浮虧</th><th class="r">浮虧×槓桿</th><th class="r">${T.H}天報酬</th><th class="r">${T.H}天報酬×槓桿</th></tr></thead>
+          <tbody id="${s.id}-turnb">${turnRows(s,2)}</tbody></table></div>`;
+    };
     const section=(s,k)=>`
       <section id="${s.id}" data-sig="${s.id}"${k?' hidden':''}>
         ${status(s)}
@@ -846,6 +872,7 @@ function renderSignals(){
         <h2 class="bt-h2" id="${s.id}-excess">超額表現</h2>
         ${btTable('excess',s.excess)}
         <p class="bt-note bt-after">相近的訊號會共用同一段漲勢（例如 2026 年的多筆強烈落底），樣本並非完全獨立，實際的可信度比樣本數看起來低。</p>
+        ${turnSec(s)}
         <h2 class="bt-h2" id="${s.id}-events">表一　訊號日期追蹤表</h2>
         <p class="bt-note">「—」＝低點就是首日，不適用；「未達成(N天)」＝截至資料最後一天已經過 N 天仍未發生。站回／再跌破費時自前一事件起算。</p>
         ${btTable('events',s.events,{rowId:r=>`ev-${s.id}-${r['首日日期']}`})}
@@ -893,6 +920,8 @@ function renderSignals(){
         <li><b>顏色</b>：沿用本站紅漲綠跌，正值紅、負值綠；橘色＝尚未發生（未達成、未突破、未站回、未確認）。</li>
         <li><b>資料檢查</b>：日期重複、沒有排序，或 2019 年以後出現週末日期時，頁首會列出提醒（2012～2018 年的週六是補班日，不算錯）。</li>
       </ul></details>`;
+
+    res.signals.filter(s=>s.turn).forEach(s=>{ const inp=$('#'+s.id+'-lev'); if(inp) inp.addEventListener('input',()=>{ const L=parseFloat(inp.value); if(L>0) $('#'+s.id+'-turnb').innerHTML=turnRows(s,L); }); });
 
     /* 歷史走勢圖：分頁第一次顯示時才建立（隱藏時量不到寬度） */
     const made={};

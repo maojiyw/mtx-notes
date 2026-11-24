@@ -230,6 +230,30 @@ window.MTXBacktest = (function(){
       } },
   ];
 
+  /* ---------- 最早第幾天起勝率穩定 100%（BP紅燈用） ----------
+     第 N 天報酬＝首日後第 N 個日曆天（含）以前最後一個交易日收盤 ÷ 首日收盤 − 1；那天以前還沒有交易日時算 0（不算贏）
+     穩定翻正日＝從這天起一路到第 H 天報酬都 > 0 的最早一天 */
+  function turnPositive(mk, idxs, H){
+    H = H || 60;
+    const retAt = (i, N) => { const j = mk.lastOnOrBefore(mk.t[i] + N); return j <= i ? 0 : mk.c[j] / mk.c[i] - 1; };
+    const rows = idxs.map(i => {
+      const avail = Math.min(H, mk.end - mk.t[i]), done = avail >= H;
+      const r = []; for(let N = 1; N <= avail; N++) r.push(retAt(i, N));
+      let first = null; for(let N = 1; N <= avail; N++) if(r[N-1] > 0){ first = N; break; }
+      let stable = null; for(let N = avail; N >= 1 && r[N-1] > 0; N--) stable = N;
+      // 翻正前（穩定翻正日之前）的最低收盤；還沒穩定翻正就看到目前為止
+      const lim = mk.t[i] + (stable != null ? stable : avail + 1);
+      let lo = i; for(let t = i + 1; t < mk.n && mk.t[t] < lim; t++) if(mk.c[t] < mk.c[lo]) lo = t;
+      return { i, date: mk.d[i], close: mk.c[i], done, avail, first, stable, ret: r,
+        retH: done ? r[H-1] : null, lowI: lo, low: mk.c[lo] / mk.c[i] - 1, lowDays: mk.days(i, lo) };
+    });
+    const D = rows.filter(r => r.done), win = [];
+    for(let N = 1; N <= H; N++) win.push(D.length ? D.filter(r => r.ret[N-1] > 0).length / D.length : null);
+    let stable = null; for(let N = H; N >= 1 && win[N-1] === 1; N--) stable = N;
+    const firstAll = win.indexOf(1) + 1 || null;
+    return { H, rows, done: D.length, win, stable, firstAll };
+  }
+
   /* ---------- 入口 ---------- */
   // data：MTXSheet.load() 的結果；end：只用這天以前的資料（驗算用，YYYY-MM-DD）
   function run(data, end){
@@ -241,10 +265,11 @@ window.MTXBacktest = (function(){
     const signals = SIGNALS.map(sig => {
       const det = sig.detect(ctx);
       const res = analyze(mk, det.kept, base);
-      return { id: sig.id, name: sig.name, label: sig.label, raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept, ...res };
+      const turn = sig.id === 'bp' ? turnPositive(mk, det.kept, 60) : null;
+      return { id: sig.id, name: sig.name, label: sig.label, raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept, turn, ...res };
     });
     return { mk, signals, first: mk.d[0], last: mk.d[mk.n-1], days: mk.n };
   }
 
-  return { run, SIGNALS, HOLD_DAYS, COOLDOWN, holdOutcome };
+  return { run, SIGNALS, HOLD_DAYS, COOLDOWN, holdOutcome, turnPositive };
 })();
