@@ -211,11 +211,11 @@ window.MTXBacktest = (function(){
   /* ---------- 訊號定義（可擴充） ---------- */
   const flagO = v => v != null && String(v).trim().toUpperCase() === 'O';
   const SIGNALS = [
-    { id: 'strong', name: '強烈落底', label: '強烈落底（BE欄）',
+    { id: 'strong', name: '強烈落底', label: '強烈落底（BE欄）', desc: '每日籌碼試算表「強烈落底」欄（BE 欄）標記 O 的交易日',
       detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if(flagO(r.sigStrong)) raw.push(i); });
         const kept = dedupe(raw, COOLDOWN);
         return { raw: raw.length, kept, removed: raw.filter(i => !kept.includes(i)).map(i => ctx.mk.d[i]).sort().reverse() }; } },
-    { id: 'bp', name: 'BP紅燈', label: 'BP紅燈（歷史前 2%）',
+    { id: 'bp', name: 'BP紅燈', label: 'BP紅燈（歷史前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷',
       detect(ctx){
         // 逐日動態判斷：當天外資BP金額 ≥ 當天以前（含當天）所有資料由大到小第 k 大，k = max(1, floor(筆數 × 2%))
         const S = ctx.bpSeries, lit = [], sorted = [];
@@ -329,7 +329,7 @@ window.MTXBacktest = (function(){
       // 出場方式比較：觀察期 120／180／250／365 天各算一次（頁面可切換）
       const exits = turn ? Object.fromEntries([120, 180, 250, 365].map(C => [C, exitRules(mk, det.kept, S, C)])) : null;
       const flatCmp = turn ? flatCompare(mk, det.kept, uniq([S, 60, 120]), 30) : null;
-      return { id: sig.id, name: sig.name, label: sig.label, raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept,
+      return { id: sig.id, name: sig.name, label: sig.label, desc: sig.desc || '', raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept,
         holds, regimeHolds, turn, paths, exits, flatCmp, ...res };
     });
     return { mk, signals, first: mk.d[0], last: mk.d[mk.n-1], days: mk.n };
