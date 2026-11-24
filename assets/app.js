@@ -1072,6 +1072,19 @@ function renderSignals(){
         ${btTable('byRegime',s.byRegime,{group:'分類方式',cols:btRegCols(BT_COLS.byRegime.slice(0,3),s.regimeHolds||[30,60])})}
         ${exitSec(s)}
       </section>`;
+    // 訊號選擇卡：一眼比較兩個訊號，點了切換下方內容
+    const pickCard=(s,k)=>{
+      const x=btPick(s.excess,{'持有週期':'30天'}), e=s.events[0];
+      return `<button class="bt-card-pick bt-tab" role="tab" data-tab="${s.id}" aria-controls="${s.id}" aria-selected="${k?'false':'true'}" style="--sc:${SIG_COLOR[s.id]||'#3B82F6'}">
+        <span class="bt-pk-top"><i class="bt-dot"></i><b>${s.label}</b><em class="bt-pk-on">目前查看</em></span>
+        <span class="bt-pk-desc">${s.desc}</span>
+        <span class="bt-pk-stats">
+          <span><small>計入次數</small><b class="num">${s.count}</b></span>
+          <span><small>最近一次</small><b class="num">${e?dt(e['首日日期']):'—'}</b></span>
+          <span><small>30 天勝率</small>${bv(x['訊號勝率'],'pct0')}<small class="bt-pk-base">基準 ${btFmt(x['基準勝率'],'pct0')}</small></span>
+          <span><small>30 天超額</small>${bv(x['超額期望值'],'pct',1)}</span>
+        </span></button>`;
+    };
 
     main.innerHTML=`
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>訊號回測</span></div>
@@ -1082,7 +1095,11 @@ function renderSignals(){
         ${end?`<p class="bt-warn">驗算模式：只使用 ${dt(end)} 以前的資料。<a href="signals.html">回到最新資料 →</a></p>`:''}
         ${warn.length?`<details class="bt-warn"><summary>資料檢查有 ${data.warnings.length} 項提醒</summary><ul>${warn.map(w=>`<li>${w}</li>`).join('')}</ul></details>`:''}
       </div>
-      <div class="bt-tabs" role="tablist">${res.signals.map((s,k)=>`<button class="bt-tab" role="tab" data-tab="${s.id}" aria-selected="${k?'false':'true'}">${s.label}</button>`).join('')}</div>
+      <h2 class="bt-pick-h">選擇要看的訊號 <span>點卡片切換；往下捲時，上方會固定一條切換列</span></h2>
+      <div class="bt-pick" role="tablist" id="btPick">${res.signals.map(pickCard).join('')}</div>
+      <div class="bt-switch noterm" id="btSwitch" aria-hidden="true"><div class="bt-switch-in">
+        <span class="bt-switch-l">訊號</span>
+        ${res.signals.map(s=>`<button class="bt-tab" data-tab="${s.id}" style="--sc:${SIG_COLOR[s.id]||'#3B82F6'}" aria-selected="false" tabindex="-1" title="${s.label}"><i class="bt-dot"></i>${s.name}</button>`).join('')}</div></div>
       ${res.signals.map(section).join('')}
       <details class="card bt-details" id="definitions"><summary>定義與計算方式</summary><ul>
         <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤與「強烈落底」欄（BE 欄，值為 O）；「Sheet1」的外資 BP 金額。網頁開啟時即時讀取並計算。</li>
@@ -1193,8 +1210,30 @@ function renderSignals(){
       if(!evMade[id]){ evMade[id]=1; evChart($('#'+id+'-ev'),s.excess,SIG_COLOR[id]||'#3B82F6'); }
       if(s.turn&&!evMade[id+'-pc']){ const el=$('#'+id+'-pc'); if(el){ evMade[id+'-pc']=1; pathChart(el,s.paths[Object.keys(s.paths)[0]],s.turn.stable); } }
     };
-    document.querySelector('.bt-tabs').addEventListener('click',e=>{ const b=e.target.closest('.bt-tab'); if(!b) return;
-      show(b.dataset.tab); history.replaceState(null,'',location.pathname+location.search+'#'+b.dataset.tab); });
+    /* 固定切換列：選擇卡捲出畫面後出現在導覽列下方 */
+    const sw=$('#btSwitch'), pick=$('#btPick'), navEl=$('#nav');
+    const navH=()=>navEl?navEl.offsetHeight:56;
+    const setTop=()=>main.style.setProperty('--navh',navH()+'px');
+    // 導覽列高度會變（手機換行、即時指數晚一點才出現），跟著更新
+    setTop(); window.addEventListener('resize',setTop); if(window.ResizeObserver&&navEl) new ResizeObserver(setTop).observe(navEl);
+    const onScroll=()=>{ const on=pick.getBoundingClientRect().bottom<navH()+4; sw.classList.toggle('on',on); sw.setAttribute('aria-hidden',on?'false':'true');
+      sw.querySelectorAll('button').forEach(b=>b.tabIndex=on?0:-1); };
+    window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+    // 切換時停在同一個段落（例如表一 → 另一個訊號的表一）；還在頁首就不捲動
+    const switchTo=(id,fromBar)=>{
+      const cur=document.querySelector('section[data-sig]:not([hidden])');
+      const off=navH()+(sw.classList.contains('on')?sw.firstElementChild.offsetHeight:0)+12;
+      let part=null;
+      if(cur) cur.querySelectorAll('.bt-h2').forEach(h=>{ if(h.getBoundingClientRect().top<=off+40) part=h.id.slice(cur.id.length); });
+      show(id); history.replaceState(null,'',location.pathname+location.search+'#'+id);
+      // 另一個訊號沒有同名段落（例如 BP紅燈獨有的分析）時，回到該訊號開頭
+      const target=(part&&$('#'+id+part))||(part||fromBar?$('#'+id):null);
+      // 圖表在 show() 裡才建立，等版面穩定再捲；不要平滑捲動（html 設了 smooth）
+      const go=()=>{ if(target) window.scrollTo({top:target.getBoundingClientRect().top+scrollY-off,behavior:'instant'}); onScroll(); };
+      go(); setTimeout(go,0);
+    };
+    pick.addEventListener('click',e=>{ const b=e.target.closest('.bt-tab'); if(b) switchTo(b.dataset.tab,false); });
+    sw.addEventListener('click',e=>{ const b=e.target.closest('.bt-tab'); if(b) switchTo(b.dataset.tab,true); });
     const h=(location.hash||'').slice(1).split('-')[0];
     show(h||res.signals[0].id);
     window.addEventListener('hashchange',()=>{ const id=location.hash.slice(1).split('-')[0]; if(id) show(id); });
