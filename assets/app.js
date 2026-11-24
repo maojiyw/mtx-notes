@@ -905,7 +905,10 @@ function renderSignals(){
     const dt=s=>s.replace(/-/g,'/');
     const warn=(data.warnings||[]).slice(0,8);
     // 分頁：第一層「強烈落底／BP過熱／BC過熱」，第二層由左至右 10%、最高一級、紫爆
-    const GROUPS=[['強烈落底',['strong']],['BP過熱',['bpv','bp','bpx']],['BC過熱',['bcy','bcg','bcx']]].map(([n,ids])=>[n,ids.filter(id=>res.signals.some(s=>s.id===id))]).filter(g=>g[1].length);
+    const GROUPS=[['強烈落底',['strong']],
+      ['BP過熱',['bpv','bp','bpx'],'外資 BP 進入高水位，大跌時的極端行情：BP過熱紫燈（前 10%）、BP極端過熱紅燈（前 2%）、BP紫爆（與結算比前 1%）'],
+      ['BC過熱',['bcy','bcg','bcx'],'外資 BC 進入高水位，大盤在高檔或暴漲時：BC過熱黃燈（前 10%）、BC極端過熱綠燈（前 1%）、BC紫爆（與結算比前 1%）']]
+      .map(([n,ids,d])=>[n,ids.filter(id=>res.signals.some(s=>s.id===id)),d]).filter(g=>g[1].length);
 
     const lead=s=>{
       const ex=r=>btPick(s.excess,{'持有週期':r});
@@ -1231,6 +1234,22 @@ function renderSignals(){
         ${btTable('byRegime',s.byRegime,{group:'分類方式',cols:btRegCols(BT_COLS.byRegime.slice(0,3),s.regimeHolds||[30,60])})}
         ${exitSec(s)}
       </section>`;
+    // 訊號選擇卡：一張卡一類（強烈落底／BP過熱／BC過熱），點了切換下方內容；同一類有多個燈號時，卡片下方是第二層
+    const pickCard=([gname,ids,gdesc],k)=>{
+      const one=ids.length===1, s0=res.signals.find(y=>y.id===ids[0]);
+      const head=`<button class="bt-card-pick bt-tab" role="tab" data-grp="${k}" aria-selected="${k?'false':'true'}" style="--sc:${SIG_COLOR[ids[0]]||'#3B82F6'}">
+        <span class="bt-pk-top"><i class="bt-dot"></i><b>${one?s0.label:gname}</b><em class="bt-pk-on">目前查看</em></span>
+        <span class="bt-pk-desc">${one?s0.desc:gdesc}</span>`;
+      if(one){ const x=btPick(s0.excess,{'持有週期':'30天'}), e=s0.events[0];
+        return head+`<span class="bt-pk-stats">
+          <span><small>計入次數</small><b class="num">${s0.count}</b></span>
+          <span><small>最近一次</small><b class="num">${e?dt(e['首日日期']):'—'}</b></span>
+          <span><small>30 天勝率</small>${bv(x['訊號勝率'],'pct0')}<small class="bt-pk-base">基準 ${btFmt(x['基準勝率'],'pct0')}</small></span>
+          <span><small>30 天超額</small>${bv(x['超額期望值'],'pct',1)}</span>
+        </span></button>`; }
+      return head+`<span class="bt-pk-rows">${ids.map(id=>{ const s=res.signals.find(y=>y.id===id), e=s.events[0], x=btPick(s.excess,{'持有週期':'30天'});
+          return `<span class="bt-pk-row" style="--sc:${SIG_COLOR[id]||'#3B82F6'}"><i class="bt-dot"></i><b>${s.name}</b><span class="num">${s.count} 次</span><span class="num">最近 ${e?dt(e['首日日期']):'—'}</span><span>30 天超額 ${bv(x['超額期望值'],'pct',1)}</span></span>`; }).join('')}</span></button>`;
+    };
 
     main.innerHTML=`
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>訊號回測</span></div>
@@ -1241,8 +1260,13 @@ function renderSignals(){
         ${end?`<p class="bt-warn">驗算模式：只使用 ${dt(end)} 以前的資料。<a href="signals.html">回到最新資料 →</a></p>`:''}
         ${warn.length?`<details class="bt-warn"><summary>資料檢查有 ${data.warnings.length} 項提醒</summary><ul>${warn.map(w=>`<li>${w}</li>`).join('')}</ul></details>`:''}
       </div>
-      <div class="bt-tabs" role="tablist">${GROUPS.map((g,k)=>`<button class="bt-tab" role="tab" data-grp="${k}" aria-selected="${k?'false':'true'}">${g[0]}</button>`).join('')}</div>
+      <h2 class="bt-pick-h noterm">選擇要看的訊號 <span>點卡片切換；BP過熱、BC過熱在卡片下方再選燈號；往下捲時，上方會固定一條切換列</span></h2>
+      <div class="bt-pick noterm" role="tablist" id="btPick">${GROUPS.map(pickCard).join('')}</div>
       <div class="bt-subtabs" id="bt-sub" role="tablist"></div>
+      <div class="bt-switch noterm" id="btSwitch" aria-hidden="true"><div class="bt-switch-in">
+        <span class="bt-switch-l">訊號</span>
+        ${GROUPS.map((g,k)=>`<button class="bt-tab" data-grp="${k}" style="--sc:${SIG_COLOR[g[1][0]]||'#3B82F6'}" aria-selected="false" tabindex="-1"><i class="bt-dot"></i>${g[0]}</button>`).join('')}
+        <span class="bt-switch-sub" id="btSwSub"></span></div></div>
       ${res.signals.map(section).join('')}
       <details class="card bt-details" id="definitions"><summary>定義與計算方式</summary><ul>
         <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、「強烈落底」欄（BE 欄，值為 O）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC、SC、BP 金額。網頁開啟時即時讀取並計算。</li>
@@ -1350,23 +1374,47 @@ function renderSignals(){
     };
     const evMade={}, lastSel={};
     const groupOf=id=>GROUPS.findIndex(g=>g[1].includes(id));
+    // 第二層按鈕：同一類的燈號（BP過熱：BP過熱紫燈、BP極端過熱紅燈、BP紫爆；BC過熱：BC過熱黃燈、BC極端過熱綠燈、BC紫爆）
+    const subBtns=(G,id,short)=>G[1].length<2?'':G[1].map(x=>{ const s=res.signals.find(y=>y.id===x);
+      return `<button class="bt-subtab" role="tab" data-tab="${x}" aria-selected="${x===id}" title="${s.label}" style="--sc:${SIG_COLOR[x]||'#3B82F6'}"><i class="bt-dot"></i>${short?s.name:s.label}</button>`; }).join('');
     const show=id=>{
       if(!res.signals.some(s=>s.id===id)) id=res.signals[0].id;
       const gi=groupOf(id), G=GROUPS[gi]; lastSel[gi]=id;
-      document.querySelectorAll('.bt-tab').forEach(b=>b.setAttribute('aria-selected',+b.dataset.grp===gi?'true':'false'));
-      // 第二層：同一類的燈號（BP過熱：BP過熱紫燈、BP極端過熱紅燈、BP紫爆；BC過熱：BC過熱黃燈、BC極端過熱綠燈、BC紫爆）
-      const sub=$('#bt-sub'); sub.hidden=G[1].length<2;
-      sub.innerHTML=G[1].length<2?'':G[1].map(x=>{ const s=res.signals.find(y=>y.id===x); return `<button class="bt-subtab" role="tab" data-tab="${x}" aria-selected="${x===id}"><i class="bt-sw" style="background:${SIG_COLOR[x]||'#3B82F6'}"></i>${s.label}</button>`; }).join('');
+      document.querySelectorAll('.bt-tab[data-grp]').forEach(b=>b.setAttribute('aria-selected',+b.dataset.grp===gi?'true':'false'));
+      const sub=$('#bt-sub'); sub.hidden=G[1].length<2; sub.innerHTML=subBtns(G,id);
+      const ss=$('#btSwSub'); ss.innerHTML=subBtns(G,id,true); ss.hidden=G[1].length<2;
       document.querySelectorAll('section[data-sig]').forEach(x=>{ x.hidden=x.id!==id; });
       const s=res.signals.find(x=>x.id===id);
       histChart(s);
       if(!evMade[id]){ evMade[id]=1; evChart($('#'+id+'-ev'),s.excess,SIG_COLOR[id]||'#3B82F6'); }
       if(s.turn&&!evMade[id+'-pc']){ const el=$('#'+id+'-pc'); if(el){ evMade[id+'-pc']=1; pathChart(el,s.paths[Object.keys(s.paths)[0]],s.turn.stable); } }
     };
-    const go=id=>{ show(id); history.replaceState(null,'',location.pathname+location.search+'#'+id); };
-    document.querySelector('.bt-tabs').addEventListener('click',e=>{ const b=e.target.closest('.bt-tab'); if(!b) return;
-      const gi=+b.dataset.grp; go(lastSel[gi]||GROUPS[gi][1][0]); });
-    $('#bt-sub').addEventListener('click',e=>{ const b=e.target.closest('.bt-subtab'); if(b) go(b.dataset.tab); });
+    /* 固定切換列：選擇卡捲出畫面後出現在導覽列下方 */
+    const sw=$('#btSwitch'), pick=$('#btPick'), navEl=$('#nav');
+    const navH=()=>navEl?navEl.offsetHeight:56;
+    const setTop=()=>main.style.setProperty('--navh',navH()+'px');
+    // 導覽列高度會變（手機換行、即時指數晚一點才出現），跟著更新
+    setTop(); window.addEventListener('resize',setTop); if(window.ResizeObserver&&navEl) new ResizeObserver(setTop).observe(navEl);
+    const onScroll=()=>{ const on=$('#bt-sub').getBoundingClientRect().bottom<navH()+4&&pick.getBoundingClientRect().bottom<navH()+4; sw.classList.toggle('on',on); sw.setAttribute('aria-hidden',on?'false':'true');
+      sw.querySelectorAll('button').forEach(b=>b.tabIndex=on?0:-1); };
+    window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+    // 切換時停在同一個段落（例如表一 → 另一個訊號的表一）；還在頁首就不捲動
+    const switchTo=(id,fromBar)=>{
+      const cur=document.querySelector('section[data-sig]:not([hidden])');
+      const off=navH()+(sw.classList.contains('on')?sw.firstElementChild.offsetHeight:0)+12;
+      let part=null;
+      if(cur) cur.querySelectorAll('.bt-h2').forEach(h=>{ if(h.getBoundingClientRect().top<=off+40) part=h.id.slice(cur.id.length); });
+      show(id); history.replaceState(null,'',location.pathname+location.search+'#'+id);
+      // 另一個訊號沒有同名段落（例如 BP紅燈獨有的分析）時，回到該訊號開頭
+      const target=(part&&$('#'+id+part))||(part||fromBar?$('#'+id):null);
+      // 圖表在 show() 裡才建立，等版面穩定再捲；不要平滑捲動（html 設了 smooth）
+      const go=()=>{ if(target) window.scrollTo({top:target.getBoundingClientRect().top+scrollY-off,behavior:'instant'}); onScroll(); };
+      go(); setTimeout(go,0);
+    };
+    // 第一層（選擇卡、切換列的類別）：回到這一類上次看的燈號；第二層：直接切到該燈號
+    const onPick=fromBar=>e=>{ const t=e.target.closest('.bt-subtab'); if(t) return switchTo(t.dataset.tab,fromBar);
+      const b=e.target.closest('.bt-tab[data-grp]'); if(b){ const gi=+b.dataset.grp; switchTo(lastSel[gi]||GROUPS[gi][1][0],fromBar); } };
+    pick.addEventListener('click',onPick(false)); $('#bt-sub').addEventListener('click',onPick(false)); sw.addEventListener('click',onPick(true));
     const h=(location.hash||'').slice(1).split('-')[0];
     show(h||res.signals[0].id);
     window.addEventListener('hashchange',()=>{ const id=location.hash.slice(1).split('-')[0]; if(id) show(id); });

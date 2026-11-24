@@ -357,10 +357,33 @@ mark.hit-m.cur{background:#F59E0B;color:#0B0E14}
 .bt-warn a{color:#93C5FD;margin-left:6px}
 .bt-warn summary{cursor:pointer}
 .bt-warn ul{margin:6px 0 0 18px;color:var(--muted)}
-.bt-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 14px}
-.bt-tab{font:inherit;font-size:14px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer}
-.bt-tab:hover{color:var(--text);border-color:var(--line2)}
-.bt-tab[aria-selected="true"]{color:var(--text);border-color:rgba(168,85,247,.7);background:rgba(168,85,247,.12)}
+/* 訊號選擇卡 */
+.bt-pick-h{font-size:16px;font-weight:700;margin:22px 0 10px}
+.bt-pick-h span{font-size:12.5px;font-weight:400;color:var(--muted);margin-left:8px}
+.bt-pick{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:22px}
+.bt-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--sc);flex:none}
+.bt-card-pick{font:inherit;text-align:left;color:var(--text);cursor:pointer;display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);opacity:.72;transition:opacity .12s,border-color .12s,background .12s}
+.bt-card-pick:hover{opacity:1;border-color:var(--line2)}
+.bt-card-pick[aria-selected="true"]{opacity:1;border-color:var(--sc);background:linear-gradient(180deg,color-mix(in srgb,var(--sc) 14%,var(--card)),var(--card) 70%);box-shadow:inset 3px 0 0 var(--sc)}
+.bt-card-pick:focus-visible{outline:2px solid var(--sc);outline-offset:2px}
+.bt-pk-top{display:flex;align-items:center;gap:8px;font-size:16px}
+.bt-pk-on{display:none;margin-left:auto;font-style:normal;font-size:11.5px;font-weight:600;color:var(--sc);border:1px solid var(--sc);border-radius:999px;padding:0 8px;line-height:1.7}
+.bt-card-pick[aria-selected="true"] .bt-pk-on{display:inline}
+.bt-pk-desc{font-size:12.5px;color:var(--muted);line-height:1.6}
+.bt-pk-stats{display:grid;grid-template-columns:repeat(4,auto);justify-content:space-between;gap:8px;padding-top:8px;border-top:1px solid var(--line)}
+.bt-pk-stats > span{display:flex;flex-direction:column;gap:1px;min-width:0}
+.bt-pk-stats small{font-size:11.5px;color:var(--muted)}
+.bt-pk-stats b{font-size:15px}
+.bt-pk-stats .bt-pk-base{font-family:var(--mono);font-size:11px}
+/* 固定切換列 */
+.bt-switch{position:sticky;top:var(--navh,56px);z-index:15;height:0;overflow:visible;pointer-events:none}
+.bt-switch-in{display:flex;align-items:center;gap:6px;padding:7px 10px;margin:0 -10px;border-radius:0 0 12px 12px;background:rgba(11,14,20,.92);backdrop-filter:blur(10px);border:1px solid var(--line);border-top:0;opacity:0;transform:translateY(-8px);transition:opacity .15s,transform .15s;overflow-x:auto;scrollbar-width:none}
+.bt-switch.on .bt-switch-in{opacity:1;transform:none;pointer-events:auto}
+.bt-switch-l{font-size:12px;color:var(--muted);margin-right:2px;white-space:nowrap}
+.bt-switch .bt-tab{font:inherit;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;white-space:nowrap}
+.bt-switch .bt-tab:hover{color:var(--text);border-color:var(--line2)}
+.bt-switch .bt-tab[aria-selected="true"]{color:var(--text);border-color:var(--sc);background:color-mix(in srgb,var(--sc) 16%,var(--card))}
+section[data-sig] .bt-h2{scroll-margin-top:calc(var(--navh,56px) + 56px)}
 .bt-status{margin-bottom:14px}
 .bt-status .dgrid{margin-top:0;border:0;border-radius:0;grid-template-columns:repeat(4,1fr)}
 .bt-lead{font-size:15px;line-height:1.85;margin:4px 0 6px;color:#D5DBE5}
@@ -397,7 +420,11 @@ table.t.bt tr.flash td{animation:btflash 1.6s ease-out}
 @media (max-width:560px){
   .nav-tabs .tab-signals .lbl{display:none}
   .bt-lead{font-size:14.5px}
-  .bt-tab{font-size:13px;padding:7px 11px}
+  .bt-pick{grid-template-columns:1fr}
+  .bt-pick-h span{display:block;margin:2px 0 0}
+  .bt-pk-stats{grid-template-columns:1fr 1fr;row-gap:10px}
+  .bt-switch-l{display:none}
+  .bt-switch .bt-tab{font-size:12.5px;padding:5px 10px}
 }
 /* 導覽列：4 個分頁在中等寬度會擠爆，依寬度逐步收起文字、把即時指數移到第二行 */
 @media (max-width:1000px){
@@ -529,3 +556,14 @@ table.t.bt.jt th:first-child,table.t.bt.jt td:first-child,table.t.bt.jt td.tx{te
 table.t.bt.jt td .pend{margin-left:6px}
 .kpis.k3.jk{grid-template-columns:repeat(3,1fr);margin:14px 0}
 @media (max-width:720px){ .kpis.k3.jk{grid-template-columns:1fr} }
+/* 選擇卡：BP過熱／BC過熱一張卡列出三個燈號；切換列的第二層 */
+.bt-pk-rows{display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px solid var(--line)}
+.bt-pk-row{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:12.5px;color:var(--muted)}
+.bt-pk-row b{white-space:nowrap;margin-right:auto}
+.bt-pk-row>span{white-space:nowrap}
+.bt-pk-row b{color:var(--text);font-size:13px}
+.bt-switch-sub{display:inline-flex;gap:4px;margin-left:6px;padding-left:8px;border-left:1px solid var(--line)}
+.bt-switch-sub[hidden]{display:none}
+.bt-switch-sub .bt-subtab{font-size:12.5px;padding:4px 10px;border-radius:999px}
+.bt-subtab[aria-selected="true"]{border-color:var(--sc,var(--line2))}
+@media (max-width:720px){ .bt-switch-in{flex-wrap:wrap} }
