@@ -138,12 +138,14 @@ window.MTXBacktest = (function(){
       '平均最大漲幅': pct(mean(mfe)), '中位數最大漲幅': pct(quant(mfe, .5)), '平均最大跌幅': pct(mean(mae)), '中位數最大跌幅': pct(quant(mae, .5)),
     };
   }
+  // 無條件基準：用到哪個持有天數才算（BP紅燈會多算第一次穩定 100% 那天與 120 天）
   function baseline(mk){
-    const b = {}; HOLD_DAYS.forEach(N => { b[N] = mk.c.map((_, i) => holdOutcome(mk, i, N)); }); return b;
+    const b = {}; return N => b[N] || (b[N] = mk.c.map((_, i) => holdOutcome(mk, i, N)));
   }
 
   /* ---------- 一個訊號的所有表格 ---------- */
-  function analyze(mk, idxs, base){
+  function analyze(mk, idxs, base, holds, regimeHolds){
+    holds = holds || HOLD_DAYS; regimeHolds = regimeHolds || REGIME_HOLDS;
     const events = idxs.map(i => eventRow(mk, i));
     const pulls = [], seen = new Map();
     events.forEach(e => {
@@ -157,15 +159,15 @@ window.MTXBacktest = (function(){
 
     const bases = [['首日收盤（可交易）', e => e._i], ['30日內最低點（參考用）', e => e._low30], ['波段低點（參考用）', e => e._swing]];
     const summary = [];
-    bases.forEach(([name, f]) => HOLD_DAYS.forEach(N => {
+    bases.forEach(([name, f]) => holds.forEach(N => {
       const starts = events.map(f).filter(s => s != null);
       const outs = starts.map(s => holdOutcome(mk, s, N));
       summary.push({ '評估基準': name, '持有週期': N + '天', ...summarize(outs), '未完成': outs.filter(o => !o).length });
     }));
-    HOLD_DAYS.forEach(N => summary.push({ '評估基準': '無條件基準（所有交易日）', '持有週期': N + '天', ...summarize(base[N]), '未完成': base[N].filter(o => !o).length }));
+    holds.forEach(N => summary.push({ '評估基準': '無條件基準（所有交易日）', '持有週期': N + '天', ...summarize(base(N)), '未完成': base(N).filter(o => !o).length }));
 
     const excess = [];
-    HOLD_DAYS.forEach(N => {
+    holds.forEach(N => {
       const s = summary.find(x => x['評估基準'].startsWith('首日') && x['持有週期'] === N + '天');
       const b = summary.find(x => x['評估基準'].startsWith('無條件') && x['持有週期'] === N + '天');
       if(s['樣本數']) excess.push({ '持有週期': N + '天', '訊號樣本數': s['樣本數'], '訊號勝率': s['勝率'], '基準勝率': b['勝率'],
@@ -174,9 +176,9 @@ window.MTXBacktest = (function(){
 
     const groupRow = (ii, inGroup) => {
       const row = {};
-      REGIME_HOLDS.forEach(H => {
+      regimeHolds.forEach(H => {
         const s = summarize(ii.map(i => holdOutcome(mk, i, H)));
-        const bs = summarize(base[H].filter((_, t) => inGroup(t)));
+        const bs = summarize(base(H).filter((_, t) => inGroup(t)));
         Object.assign(row, { [`${H}天完成數`]: s['樣本數'], [`${H}天勝率`]: s['勝率'] ?? null, [`${H}天期望值`]: s['期望值'] ?? null,
           [`${H}天基準期望值`]: bs['期望值'] ?? null, [`${H}天超額`]: s['樣本數'] ? r2(s['期望值'] - bs['期望值']) : null });
       });
@@ -244,14 +246,65 @@ window.MTXBacktest = (function(){
       // 翻正前（穩定翻正日之前）的最低收盤；還沒穩定翻正就看到目前為止
       const lim = mk.t[i] + (stable != null ? stable : avail + 1);
       let lo = i; for(let t = i + 1; t < mk.n && mk.t[t] < lim; t++) if(mk.c[t] < mk.c[lo]) lo = t;
+      // 路徑：H 天內最高報酬與第幾天；穩定翻正後，從「翻正後的最高點」最大拉回多少（報酬換算回價格比較）
+      let peak = null, peakDay = null; r.forEach((v, k) => { if(peak === null || v > peak){ peak = v; peakDay = k + 1; } });
+      let pull = null, pullDay = null, pullFrom = null;
+      if(stable != null){ let hi = -Infinity, hiDay = null; pull = 0;
+        for(let N = stable; N <= avail; N++){ const v = r[N-1]; if(v > hi){ hi = v; hiDay = N; }
+          const d = (1 + v) / (1 + hi) - 1; if(d < pull){ pull = d; pullDay = N; pullFrom = hiDay; } } }
       return { i, date: mk.d[i], close: mk.c[i], done, avail, first, stable, ret: r,
-        retH: done ? r[H-1] : null, lowI: lo, low: mk.c[lo] / mk.c[i] - 1, lowDays: mk.days(i, lo) };
+        retH: done ? r[H-1] : null, lowI: lo, low: mk.c[lo] / mk.c[i] - 1, lowDays: mk.days(i, lo),
+        peak, peakDay, pull, pullDay, pullFrom };
     });
     const D = rows.filter(r => r.done), win = [];
-    for(let N = 1; N <= H; N++) win.push(D.length ? D.filter(r => r.ret[N-1] > 0).length / D.length : null);
+    const ev = [];   // 第 N 天的期望值（平均報酬）
+    for(let N = 1; N <= H; N++){ win.push(D.length ? D.filter(r => r.ret[N-1] > 0).length / D.length : null); ev.push(D.length ? D.reduce((s, r) => s + r.ret[N-1], 0) / D.length : null); }
     let stable = null; for(let N = H; N >= 1 && win[N-1] === 1; N--) stable = N;
     const firstAll = win.indexOf(1) + 1 || null;
-    return { H, rows, done: D.length, win, stable, firstAll };
+    return { H, rows, done: D.length, win, ev, stable, firstAll };
+  }
+
+  /* ---------- 出場方式比較（BP紅燈用；「從最高點跌 X% 就賣」「獲利剩 Y% 就賣」回測過、沒有比較好，2026-11-24 決定不放）：首日收盤進場，最多觀察 CAP 個日曆天，沒觸發就在第 CAP 天出場 ----------
+     回傳每種出場方式在每次訊號的 [出場第幾天, 報酬]；只算已滿 CAP 天的訊號 */
+  function exitRules(mk, idxs, stableDay, CAP){
+    CAP = CAP || 120;
+    const E = idxs.filter(i => mk.end - mk.t[i] >= CAP).map(i => {
+      const p = []; for(let t = i + 1; t < mk.n && mk.days(i, t) <= CAP; t++) p.push([mk.days(i, t), mk.c[t] / mk.c[i] - 1]);
+      return { i, date: mk.d[i], p };
+    });
+    const last = p => p[p.length - 1];
+    const hold = N => p => { let a = null; p.forEach(x => { if(x[0] <= N) a = x; }); return a; };
+    // 整理出場：已經獲利、而且連續 K 個日曆天沒有創新高（收盤）就出場
+    const flat = K => p => { let pk = 0, pd = 0; for(const [d, r] of p){ if(r > pk){ pk = r; pd = d; } if(pk > 0 && d - pd >= K) return [d, r]; } return last(p); };
+    const best = p => p.reduce((a, b) => b[1] > a[1] ? b : a);
+    const R = [
+      ...[30, stableDay, 60, 90, 120, 180, 250, 365].filter((N, k, a) => N && N <= CAP && a.indexOf(N) === k).sort((a, b) => a - b)
+        .map(N => ['hold', '固定天數', N === stableDay ? `持有 ${N} 天（勝率穩定 100% 那天）` : `持有 ${N} 天`, hold(N)]),
+      ['flat', '整理太久就賣', '連續 30 天沒創新高就賣', flat(30)],
+      ['best', '事後才知道', `${CAP} 天內最高點（參考）`, best],
+    ].map(([kind, group, name, fn]) => {
+      const o = E.map(e => fn(e.p)), rets = o.map(x => x[1]), days = o.map(x => x[0]);
+      const avg = rets.length ? mean(rets) : null, avgDays = days.length ? mean(days) : null;
+      return { kind, group, name, each: o, avg, min: rets.length ? Math.min(...rets) : null, win: rets.length ? rets.filter(x => x > 0).length / rets.length : null,
+        avgDays, perDay: avg != null && avgDays ? avg / avgDays : null };
+    });
+    return { CAP, events: E.map(e => e.date), rules: R };
+  }
+
+  /* ---------- 「連續 K 天沒創新高就賣」在 46／60／120 天內會不會觸發（BP紅燈用） ----------
+     每個觀察期 C：訊號各自是否在 C 天內觸發、報酬，對照持有 C 天；基準＝所有交易日都當成進場日、套同一個規則 */
+  function flatCompare(mk, idxs, caps, K){
+    K = K || 30;
+    const path = (i, C) => { const p = []; for(let t = i + 1; t < mk.n && mk.days(i, t) <= C; t++) p.push([mk.days(i, t), mk.c[t] / mk.c[i] - 1]); return p; };
+    const run1 = p => { let pk = 0, pd = 0; for(const [d, r] of p){ if(r > pk){ pk = r; pd = d; } if(pk > 0 && d - pd >= K) return { d, r, hit: true }; }
+      const l = p[p.length - 1]; return { d: l[0], r: l[1], hit: false }; };
+    return caps.map(C => {
+      const ok = i => mk.end - mk.t[i] >= C;
+      const ev = idxs.filter(ok).map(i => { const p = path(i, C); return { date: mk.d[i], flat: run1(p), hold: p[p.length - 1][1] }; });
+      let n = 0, sf = 0, sh = 0, hits = 0;
+      for(let i = 0; i < mk.n; i++){ if(!ok(i)) break; const p = path(i, C); if(!p.length) continue; const f = run1(p); n++; sf += f.r; sh += p[p.length - 1][1]; if(f.hit) hits++; }
+      return { C, ev, base: n ? { n, flat: sf / n, hold: sh / n, hitRate: hits / n } : null };
+    });
   }
 
   /* ---------- 入口 ---------- */
@@ -264,12 +317,23 @@ window.MTXBacktest = (function(){
     const ctx = { mk, bpSeries };
     const signals = SIGNALS.map(sig => {
       const det = sig.detect(ctx);
-      const res = analyze(mk, det.kept, base);
+      // BP紅燈：先算「第一次穩定 100%」的天數，持有週期與穩健性檢查都加入這一天和 120 天（天數會隨資料浮動）
       const turn = sig.id === 'bp' ? turnPositive(mk, det.kept, 60) : null;
-      return { id: sig.id, name: sig.name, label: sig.label, raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept, turn, ...res };
+      const S = turn && turn.stable;
+      const uniq = a => [...new Set(a.filter(Boolean))].sort((x, y) => x - y);
+      const holds = turn ? uniq([...HOLD_DAYS, S, 120]) : HOLD_DAYS;
+      const regimeHolds = turn ? uniq([...REGIME_HOLDS, S, 120]) : REGIME_HOLDS;
+      const res = analyze(mk, det.kept, base, holds, regimeHolds);
+      // 走勢（中途有沒有拉回）：觀察期 60／90／120 天（頁面可切換）
+      const paths = turn ? Object.fromEntries([60, 90, 120].map(H => [H, H === 60 ? turn : turnPositive(mk, det.kept, H)])) : null;
+      // 出場方式比較：觀察期 120／180／250／365 天各算一次（頁面可切換）
+      const exits = turn ? Object.fromEntries([120, 180, 250, 365].map(C => [C, exitRules(mk, det.kept, S, C)])) : null;
+      const flatCmp = turn ? flatCompare(mk, det.kept, uniq([S, 60, 120]), 30) : null;
+      return { id: sig.id, name: sig.name, label: sig.label, raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept,
+        holds, regimeHolds, turn, paths, exits, flatCmp, ...res };
     });
     return { mk, signals, first: mk.d[0], last: mk.d[mk.n-1], days: mk.n };
   }
 
-  return { run, SIGNALS, HOLD_DAYS, COOLDOWN, holdOutcome, turnPositive };
+  return { run, SIGNALS, HOLD_DAYS, COOLDOWN, holdOutcome, turnPositive, exitRules, flatCompare };
 })();
