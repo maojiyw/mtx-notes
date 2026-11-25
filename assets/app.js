@@ -1164,13 +1164,23 @@ function renderSignals(){
       // 下跌比例比基準高 15 個百分點以上的格子標出來
       const cell=(o,N)=>{ const h=o.h[N]; if(!h.n) return '<td class="r">—</td>';
         const hot=o!==B&&h.down-B.h[N].down>=15;
-        return `<td class="r${hot?' bt-top':''}"><span class="${cls(h.avg)}">${btFmt(h.avg,'pct')}</span><br><span class="bt-gap">跌 ${h.down.toFixed(0)}%</span></td>`; };
+        return `<td class="r${hot?' bt-top':''}"><span class="${cls(h.avg)}">${btFmt(h.avg,'pct')}</span><br><span class="bt-gap">下跌比例 ${h.down.toFixed(0)}%</span></td>`; };
       const row=(o,k)=>`<tr${k?` class="${k}"`:''}><td class="tx">${o.name}</td><td class="r">${o===B?'每天':o.n}</td>${HS.map(N=>cell(o,N)).join('')}
         <td class="r${o!==B&&o.crash!=null&&o.crash-B.crash>=10?' bt-top':''}">${o.crash==null?'—':`${o.crash.toFixed(0)}%${o===B?'':`<br><span class="bt-gap">${o.crashN} / ${o.doneN}</span>`}`}</td></tr>`;
       const main=H.rows.filter(r=>!['fiturn','ratio'].includes(r.key)), ext=H.rows.filter(r=>['fiturn','ratio'].includes(r.key));
-      // 結論：已完成 14 天的樣本至少 8 次、下跌比例最高的起點
-      const cand=H.rows.filter(r=>r.key!=='every'&&r.h[14].n>=8).sort((a,b)=>b.h[14].down-a.h[14].down)[0];
+      // 結論只說站得住的：平均報酬差距不到 1 個百分點算「差不多」；
+      // 「明顯比較容易跌」要已完成 14 天的樣本至少 8 次、下跌比例比基準高 15 個百分點以上（與紫底同一標準）
       const first=H.rows[0], lit=H.tops.filter(t=>t.lit).length;
+      const few=n=>n<12?`；只有 ${n} 次，僅供參考`:'';
+      const pc0=v=>`<b class="num">${v.toFixed(0)}%</b>`;
+      const f30=first.h[30], gap30=f30.avg-B.h[30].avg;
+      const cand=H.rows.filter(r=>r.key!=='every'&&r.h[14].n>=8&&r.h[14].down-B.h[14].down>=15).sort((a,b)=>b.h[14].down-a.h[14].down)[0];
+      // 首日本身的下跌比例明顯偏高時，不下「不是賣出訊號」的結論，避免前後兩句矛盾
+      const notSell=cand&&cand===first?'':'，亮燈本身不是賣出訊號';
+      const avgTxt=!f30.n?'':`首日之後 30 天平均 ${bv(f30.avg,'pct')}（基準 ${bv(B.h[30].avg,'pct')}），`+
+        (gap30>=1?`<b>比基準好${notSell}</b>`:gap30>-1?`<b>和基準差不多（差距不到 1 個百分點）${notSell}</b>`:`比基準低 ${Math.abs(gap30).toFixed(2)} 個百分點`)+few(f30.n)+'。';
+      const candTxt=cand?`14 天後下跌比例明顯比基準高的是「${cand.name}」：${pc0(cand.h[14].down)}，基準 ${pc0(B.h[14].down)}（${cand.h[14].n} 次${cand.h[14].n<12?'，次數少，僅供參考':''}）。`
+        :`各起點 14 天後的下跌比例都沒有比基準（${pc0(B.h[14].down)}）高 15 個百分點以上，<b>沒有哪個起點明顯比較容易跌</b>。`;
       const N=H.now, last=mk.d[LAST];
       return `
         <h2 class="bt-h2" id="${s.id}-hw">高檔觀測：亮燈之後大盤怎麼走？</h2>
@@ -1181,12 +1191,11 @@ function renderSignals(){
           <div><span>亮燈門檻（當天）</span><b class="num">${H.lastThr==null?"—":fmt(H.lastThr/1e5,1)+" 億"}</b><em>門檻逐日變動，不寫死</em></div>
         </div></div>
         <p class="bt-lead">BC 燈號亮的時候，大盤常常還在漲（緩漲急跌、長期多頭），所以除了「首日」，也比較了幾種不同的起點。
-          首日之後 30 天平均 ${bv(first.h[30].avg,'pct')}（基準 ${bv(B.h[30].avg,'pct')}），${first.h[30].avg>=B.h[30].avg?'<b>沒有比較差，亮燈本身不是賣出訊號</b>':'比基準差'}。
-          ${cand?`目前最明顯的是「${cand.name}」：之後 14 天下跌的比例 ${bv(cand.h[14].down,'pct0')}，基準 ${bv(B.h[14].down,'pct0')}（${cand.h[14].n} 次）。`:''}</p>
+          ${avgTxt}${candTxt}</p>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="tx">從哪一天開始算</th><th class="r">次數</th>${HS.map(N=>`<th class="r">${N} 天後</th>`).join('')}<th class="r">120 天內曾跌<br>10% 以上</th></tr></thead><tbody>
           ${main.map(o=>row(o)).join('')}${row(B,'base grp')}${ext.map((o,k)=>row(o,k?'':'grp')).join('')}
         </tbody></table></div>
-        <p class="bt-note bt-after">每格上面是平均報酬，下面是到期時下跌的比例；紫底＝下跌比例比基準高 15 個百分點以上（最後一欄是高 10 個百分點以上）。
+        <p class="bt-note bt-after">每格上面是平均報酬（第 N 天收盤比起算日收盤的漲跌幅，所有次數平均），下面是下跌比例（第 N 天收盤比起算日低的次數占幾成）；紫底＝下跌比例比基準高 15 個百分點以上（最後一欄是高 10 個百分點以上）。
           全部只用當天就知道的資訊：「熄燈」＝前一個交易日亮、當天沒亮；「連續亮 K 天以上後熄燈」看的是熄燈前連續亮了幾個交易日。
           「一段亮燈的最後一天」要等之後沒再亮才知道，等於偷看未來，所以不用。外資期貨淨單＝工作表1「外資(大小台)期貨未平倉」，由 ≥0 變成 &lt;0。${ext.some(r=>r.key==='ratio')?'BC÷SC 是同一天外資 BC 金額除以 SC 金額，用來排除「大盤上漲讓 BC 金額跟著變大」的影響，只當參考。':''}</p>
         <h3 class="bt-h3">2012 年以來跌 10% 以上的高點：高點前 90 天內有沒有亮燈？</h3>
