@@ -98,8 +98,10 @@ b,strong{font-weight:600;color:#fff}
 .r-head h1{font-size:25px;line-height:1.4;margin:4px 0 6px}
 .r-ohlc{display:grid;grid-template-columns:repeat(6,auto);gap:4px 22px;margin-top:16px;justify-content:start}
 .r-ohlc div{display:flex;flex-direction:column}
-.r-ohlc span{font-size:12px;color:var(--muted)}
-.r-ohlc b{font-size:15px}
+.r-ohlc>div>span{font-size:12px;color:var(--muted)}
+.r-ohlc b{font-size:15px;white-space:nowrap}   /* 手機上數字和單位不拆行 */
+.r-ohlc b.brk{white-space:normal}
+.r-ohlc .nw{white-space:nowrap}
 .r-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--line2);font-size:13px;color:var(--text)}
 .btn:hover{border-color:var(--accent)}
@@ -248,6 +250,7 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
   .day{grid-template-columns:110px minmax(0,1fr)}
   .day .body{grid-column:1/-1}
   .r-ohlc{grid-template-columns:repeat(3,auto)}
+  .r-ohlc.two{grid-template-columns:repeat(2,auto)}
 }
 @media (max-width:560px){
   .rb-note{margin-left:0;width:100%}

@@ -230,7 +230,7 @@ window.MTXBacktest = (function(){
       detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if((r.g1 && r.g1.n === 4) || (r.g2 && r.g2.n === 4)) raw.push(i); });
         const kept = dedupe(raw, COOLDOWN);
         return { raw: raw.length, kept, removed: raw.filter(i => !kept.includes(i)).map(i => ctx.mk.d[i]).sort().reverse() }; } },
-    { id: 'bp', name: 'BP極端過熱紅燈', label: 'BP極端過熱紅燈（前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.02,
+    { id: 'bp', name: 'BP極端過熱紅燈', label: 'BP極端過熱紅燈（前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 金額', pct: 0.02,
       detect(ctx){
         // 逐日動態判斷：當天外資BP金額 ≥ 當天以前（含當天）所有資料由大到小第 k 大，k = max(1, floor(筆數 × 2%))
         const S = ctx.bpSeries, lit = [], sorted = [];
@@ -246,15 +246,15 @@ window.MTXBacktest = (function(){
         return { raw: kept.length, kept, removed: [] };
       } },
     // 以下 2026-11-24 新增：BP 系列（大跌時的極端行情）與 BC 系列（高檔或暴漲時）；判斷方式同 BP紅燈（逐日、2012 起、冷卻 10 個交易日）
-    { id: 'bpv', name: 'BP過熱紫燈', label: 'BP過熱紫燈（前 10%）', desc: '外資 BP 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.10,
+    { id: 'bpv', name: 'BP過熱紫燈', label: 'BP過熱紫燈（前 10%）', desc: '外資 BP 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'low', col: '外資 BP 金額', pct: 0.10,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bp, 0.10); } },
-    { id: 'bpx', name: 'BP紫爆', label: 'BP紫爆（W 欄前 1%）', desc: '外資(BP)OP未平倉金額與結算比（W 欄）達到當天以前所有資料的前 1%', kind: 'low', col: '外資(BP)OP未平倉金額與結算比（工作表1 W 欄）', pct: 0.01,
+    { id: 'bpx', name: 'BP紫爆', label: 'BP紫爆（與結算比前 1%）', desc: '外資(BP)OP未平倉金額與結算比達到當天以前所有資料的前 1%', kind: 'low', col: '外資(BP)OP未平倉金額與結算比', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bpRel, 0.01); } },
-    { id: 'bcy', name: 'BC過熱黃燈', label: 'BC過熱黃燈（前 10%）', desc: '外資 BC 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'high', col: '外資 BC 金額（Sheet1 H 欄）', pct: 0.10,
+    { id: 'bcy', name: 'BC過熱黃燈', label: 'BC過熱黃燈（前 10%）', desc: '外資 BC 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'high', col: '外資 BC 金額', pct: 0.10,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bc, 0.10); } },
-    { id: 'bcg', name: 'BC極端過熱綠燈', label: 'BC極端過熱綠燈（前 1%）', desc: '外資 BC 金額達到當天以前所有資料的前 1%，逐日判斷', kind: 'high', col: '外資 BC 金額（Sheet1 H 欄）', pct: 0.01,
+    { id: 'bcg', name: 'BC極端過熱綠燈', label: 'BC極端過熱綠燈（前 1%）', desc: '外資 BC 金額達到當天以前所有資料的前 1%，逐日判斷', kind: 'high', col: '外資 BC 金額', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bc, 0.01); } },
-    { id: 'bcx', name: 'BC紫爆', label: 'BC紫爆（T 欄前 1%）', desc: '外資(BC)OP未平倉金額與結算比（T 欄）達到當天以前所有資料的前 1%', kind: 'high', col: '外資(BC)OP未平倉金額與結算比（工作表1 T 欄）', pct: 0.01,
+    { id: 'bcx', name: 'BC紫爆', label: 'BC紫爆（與結算比前 1%）', desc: '外資(BC)OP未平倉金額與結算比達到當天以前所有資料的前 1%', kind: 'high', col: '外資(BC)OP未平倉金額與結算比', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bcRel, 0.01); } },
   ];
 
