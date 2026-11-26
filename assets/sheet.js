@@ -16,7 +16,7 @@ window.MTXSheet = (function(){
     fiSpot:'外資現貨買賣超', fiOI:'外資(大小台)期貨未平倉', fiRel:'外資期貨未平倉與結算比', fiDelta:'外資期貨未平倉與前日增減',
     rtLong:'散戶看多', rtShort:'散戶看空', rtLongPct:'多單持倉占比百分位', rtShortPct:'空單持倉占比百分位',
     mxLong:'微台看多', mxShort:'微台看空',
-    sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sigAmp:'幅度', sigStrong:'強烈落底', sig3:'連續三天期貨逆增',
+    sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sig3:'連續三天期貨逆增',
     bcRel:'外資(BC)OP未平倉金額與結算比', bpRel:'外資(BP)OP未平倉金額與結算比',   // BC紫爆／BP紫爆用（結算日歸零，代表上次結算以來的累積）
     note:'每日短評'
   };
@@ -24,7 +24,7 @@ window.MTXSheet = (function(){
   // 單位備註：選擇權金額欄為千元（換億 ÷1e5）；「融資金額(仟元)」欄名有誤，數值其實是億
   const OPT = { bc:'外資BC金額', sc:'外資SC金額', bp:'外資BP金額', sp:'外資SP金額', bcsc:'外資BC/SC增幅比例', bpsp:'外資BP/SP增幅比例',
     bpQty:'外資BP口數', spQty:'外資SP口數' };
-  const FLAGS = ['sigSPQty','sigSPAmt','sigMicro','sigBoth','sigAmp','sigStrong','sig3'];
+  const FLAGS = ['sigSPQty','sigSPAmt','sigMicro','sigBoth','sig3'];
 
   function parseCSV(t){
     const rows=[]; let row=[], f='', q=false;
