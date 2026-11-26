@@ -556,7 +556,7 @@ table.t.bt td.bt-top{background:rgba(168,85,247,.16)}
 .jcard{padding:16px 18px}
 .jcard>h3{font-size:16px;margin-bottom:10px}
 table.t.bt.jt th,table.t.bt.jt td{text-align:right}
-table.t.bt.jt th:first-child,table.t.bt.jt td:first-child,table.t.bt.jt td.tx{text-align:left}
+table.t.bt.jt th:first-child,table.t.bt.jt td:first-child,table.t.bt.jt td.tx,table.t.bt.jt th.tx{text-align:left}
 table.t.bt.jt td .pend{margin-left:6px}
 .kpis.k3.jk{grid-template-columns:repeat(3,1fr);margin:14px 0}
 @media (max-width:720px){ .kpis.k3.jk{grid-template-columns:1fr} }
@@ -579,3 +579,4 @@ table.t.bt.jt td .pend{margin-left:6px}
 .fold>summary .fold-last{margin-left:auto;font-weight:400;font-size:12.5px;color:var(--text)}
 .fold:not([open])>summary .sub{display:none}
 .fold[open]>summary .fold-last{display:none}
+table.t.bt.jt tr.jhold td{color:var(--muted)}
