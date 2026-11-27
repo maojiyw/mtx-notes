@@ -226,14 +226,14 @@ window.MTXBacktest = (function(){
     return { raw: kept.length, kept, removed: [], lit, lastVal, lastThr };   // lastVal／lastThr：最後一天的值與門檻
   }
   /* ---------- 訊號定義（可擴充） ---------- */
-  const flagO = v => v != null && String(v).trim().toUpperCase() === 'O';
   const SIGNALS = [
-    { id: 'strong', name: '強烈落底', label: '強烈落底（BE欄）', desc: '每日籌碼試算表「強烈落底」欄（BE 欄）標記 O 的交易日', kind: 'low',
-      detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if(flagO(r.sigStrong)) raw.push(i); });
+    { id: 'strong', name: '強烈落底', label: '強烈落底', desc: '收跌日，落底訊號任一組 4 項全部滿足（每日籌碼頁同一套規則，網站自算）', kind: 'low',
+      // 2026-11-26 起改用網站自算（sheet.js 的 dropSignals），不再讀試算表 BE 欄；2011 年以來逐日與 BE 欄一致
+      detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if((r.g1 && r.g1.n === 4) || (r.g2 && r.g2.n === 4)) raw.push(i); });
         const kept = dedupe(raw, COOLDOWN);
         return { raw: raw.length, kept, removed: raw.filter(i => !kept.includes(i)).map(i => ctx.mk.d[i]).sort().reverse() }; } },
     // turn: true＝另算「第一次穩定 100%」、走勢、出場方式比較（BP紅燈，以及照它的模式算的研發處訊號）
-    { id: 'bp', name: 'BP極端過熱紅燈', label: 'BP極端過熱紅燈（前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.02, turn: true,
+    { id: 'bp', name: 'BP極端過熱紅燈', label: 'BP極端過熱紅燈（前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 金額', pct: 0.02, turn: true,
       detect(ctx){
         // 逐日動態判斷：當天外資BP金額 ≥ 當天以前（含當天）所有資料由大到小第 k 大，k = max(1, floor(筆數 × 2%))
         const S = ctx.bpSeries, lit = [], sorted = [];
@@ -249,15 +249,15 @@ window.MTXBacktest = (function(){
         return { raw: kept.length, kept, removed: [] };
       } },
     // 以下 2026-11-24 新增：BP 系列（大跌時的極端行情）與 BC 系列（高檔或暴漲時）；判斷方式同 BP紅燈（逐日、2012 起、冷卻 10 個交易日）
-    { id: 'bpv', name: 'BP過熱紫燈', label: 'BP過熱紫燈（前 10%）', desc: '外資 BP 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.10,
+    { id: 'bpv', name: 'BP過熱紫燈', label: 'BP過熱紫燈（前 10%）', desc: '外資 BP 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'low', col: '外資 BP 金額', pct: 0.10,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bp, 0.10); } },
-    { id: 'bpx', name: 'BP紫爆', label: 'BP紫爆（W 欄前 1%）', desc: '外資(BP)OP未平倉金額與結算比（W 欄）達到當天以前所有資料的前 1%', kind: 'low', col: '外資(BP)OP未平倉金額與結算比（工作表1 W 欄）', pct: 0.01,
+    { id: 'bpx', name: 'BP紫爆', label: 'BP紫爆（與結算比前 1%）', desc: '外資(BP)OP未平倉金額與結算比達到當天以前所有資料的前 1%', kind: 'low', col: '外資(BP)OP未平倉金額與結算比', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bpRel, 0.01); } },
-    { id: 'bcy', name: 'BC過熱黃燈', label: 'BC過熱黃燈（前 10%）', desc: '外資 BC 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'high', col: '外資 BC 金額（Sheet1 H 欄）', pct: 0.10,
+    { id: 'bcy', name: 'BC過熱黃燈', label: 'BC過熱黃燈（前 10%）', desc: '外資 BC 金額達到當天以前所有資料的前 10%，逐日判斷', kind: 'high', col: '外資 BC 金額', pct: 0.10,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bc, 0.10); } },
-    { id: 'bcg', name: 'BC極端過熱綠燈', label: 'BC極端過熱綠燈（前 1%）', desc: '外資 BC 金額達到當天以前所有資料的前 1%，逐日判斷', kind: 'high', col: '外資 BC 金額（Sheet1 H 欄）', pct: 0.01,
+    { id: 'bcg', name: 'BC極端過熱綠燈', label: 'BC極端過熱綠燈（前 1%）', desc: '外資 BC 金額達到當天以前所有資料的前 1%，逐日判斷', kind: 'high', col: '外資 BC 金額', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bc, 0.01); } },
-    { id: 'bcx', name: 'BC紫爆', label: 'BC紫爆（T 欄前 1%）', desc: '外資(BC)OP未平倉金額與結算比（T 欄）達到當天以前所有資料的前 1%', kind: 'high', col: '外資(BC)OP未平倉金額與結算比（工作表1 T 欄）', pct: 0.01,
+    { id: 'bcx', name: 'BC紫爆', label: 'BC紫爆（與結算比前 1%）', desc: '外資(BC)OP未平倉金額與結算比達到當天以前所有資料的前 1%', kind: 'high', col: '外資(BC)OP未平倉金額與結算比', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bcRel, 0.01); } },
     // 以下 2026-11-27 新增「研發處」（lab: true）：研究中、結論還沒定案的題目，定案後再移到正式分類
     // BP過熱紫燈連續 N 天：連續亮燈（中間沒亮 gap 個交易日以內仍算同一段）到第 N 個亮燈日那天＝訊號日。當天就知道已經亮滿 N 天，可以照做；一段只算一次

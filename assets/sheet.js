@@ -16,7 +16,7 @@ window.MTXSheet = (function(){
     fiSpot:'外資現貨買賣超', fiOI:'外資(大小台)期貨未平倉', fiRel:'外資期貨未平倉與結算比', fiDelta:'外資期貨未平倉與前日增減',
     rtLong:'散戶看多', rtShort:'散戶看空', rtLongPct:'多單持倉占比百分位', rtShortPct:'空單持倉占比百分位',
     mxLong:'微台看多', mxShort:'微台看空',
-    sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sigAmp:'幅度', sigStrong:'強烈落底', sig3:'連續三天期貨逆增',
+    sigSPQty:'外資SP口數', sigSPAmt:'金額', sigMicro:'微台', sigBoth:'小+微', sig3:'連續三天期貨逆增',
     bcRel:'外資(BC)OP未平倉金額與結算比', bpRel:'外資(BP)OP未平倉金額與結算比',   // BC紫爆／BP紫爆用（結算日歸零，代表上次結算以來的累積）
     note:'每日短評'
   };
@@ -24,7 +24,7 @@ window.MTXSheet = (function(){
   // 單位備註：選擇權金額欄為千元（換億 ÷1e5）；「融資金額(仟元)」欄名有誤，數值其實是億
   const OPT = { bc:'外資BC金額', sc:'外資SC金額', bp:'外資BP金額', sp:'外資SP金額', bcsc:'外資BC/SC增幅比例', bpsp:'外資BP/SP增幅比例',
     bpQty:'外資BP口數', spQty:'外資SP口數' };
-  const FLAGS = ['sigSPQty','sigSPAmt','sigMicro','sigBoth','sigAmp','sigStrong','sig3'];
+  const FLAGS = ['sigSPQty','sigSPAmt','sigMicro','sigBoth','sig3'];
 
   function parseCSV(t){
     const rows=[]; let row=[], f='', q=false;
@@ -156,11 +156,13 @@ window.MTXSheet = (function(){
       const v=(r,n)=>{ const i=at(n); if(i<0) return null; const s=String(r[i]||'').replace(/,/g,'').trim(); return s===''?null:+s; };
       const grp=(r,p,u1,u2)=>{ const o={loan:v(r,p+'融資'+u1),loanChg:v(r,p+'資增減'+u1),short:v(r,p+'融券'+u2),shortChg:v(r,p+'券增減'+u2)}; return o.loan==null?null:o; };
       const codes=head.map(h=>(norm(h).match(/^(\w+)融資\(張\)$/)||[])[1]).filter(Boolean);
-      const ratio=[], credit=[];
+      const ratio=[], credit=[], seenR={}, seenC={};   // 同一天出現兩列（手動插列）只算一次，空白的部分用另一列補
       rows.forEach(r=>{ const d=String(r[0]||'').trim(); if(!/^\d{4}-\d\d-\d\d$/.test(d)) return;
-        const rt=v(r,'維持率(%)'); if(rt!=null) ratio.push([d,rt,v(r,'融資餘額扣除ETF(億)')]);
+        const rt=v(r,'維持率(%)'); if(rt!=null&&!seenR[d]){ seenR[d]=1; ratio.push([d,rt,v(r,'融資餘額扣除ETF(億)')]); }
         const etf={}; codes.forEach(c=>{ const e=grp(r,c,'(張)','(張)'); if(e) etf[c]=e; });
-        const tw=grp(r,'上市','(億)','(張)'); if(tw) credit.push({d,twse:tw,tpex:grp(r,'上櫃','(億)','(張)'),etf});
+        const tw=grp(r,'上市','(億)','(張)'), tp=grp(r,'上櫃','(億)','(張)'); if(!tw) return;
+        const o=seenC[d]; if(o){ if(!o.tpex) o.tpex=tp; codes.forEach(c=>{ if(!o.etf[c]&&etf[c]) o.etf[c]=etf[c]; }); return; }
+        credit.push(seenC[d]={d,twse:tw,tpex:tp,etf});
       });
       ratio.sort((a,b)=>a[0]<b[0]?-1:1); credit.sort((a,b)=>a.d<b.d?-1:1);
       const etfs={}; codes.forEach(c=>etfs[c]=ETF_NAMES[c]||'');

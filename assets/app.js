@@ -82,18 +82,31 @@ function liveTicker(){
 
 /* ---------- charts ---------- */
 function baseChart(el,extra){
-  return LightweightCharts.createChart(el,Object.assign({
+  const ch=LightweightCharts.createChart(el,Object.assign({
     autoSize:true,
     layout:{background:{type:'solid',color:'#151A23'},textColor:'#8A94A7',fontSize:11,fontFamily:"'JetBrains Mono',monospace"},
     grid:{vertLines:{visible:false},horzLines:{color:'rgba(35,43,58,.6)'}},
     rightPriceScale:{borderColor:'#232B3A'},
     timeScale:{borderColor:'#232B3A',fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.05},
     crosshair:{mode:LightweightCharts.CrosshairMode.Magnet,vertLine:{color:'#5D677B',labelBackgroundColor:'#2E3850'},horzLine:{color:'#5D677B',labelBackgroundColor:'#2E3850'}},
-    // 全站圖表：滑鼠滾輪放大縮小、按住拖曳左右移動；手機兩指縮放、左右滑動（上下滑仍捲動頁面）
+    // 全站圖表：電腦點一下圖表後才用滾輪放大縮小（見 clickToZoom）、按住拖曳左右移動；手機兩指縮放、左右滑動（上下滑仍捲動頁面）
     handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
-    handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:false},axisDoubleClickReset:false},
+    handleScale:{mouseWheel:false,pinch:true,axisPressedMouseMove:{time:true,price:false},axisDoubleClickReset:false},
     localization:{locale:'zh-TW'}
   },extra||{}));
+  clickToZoom(ch,el);
+  return ch;
+}
+/* 電腦版：滾輪平常用來捲動頁面；點一下圖表後，滾輪才變成放大縮小（圖表加外框）；滑鼠一離開圖表就恢復捲動頁面，要縮放得再點一次。
+   滑鼠停在還沒啟用的圖表上時顯示一行提示，移開或點下去就消失。手機不受影響（兩指縮放）。 */
+function clickToZoom(ch,el){
+  if(getComputedStyle(el).position==='static') el.style.position='relative';
+  let on=false;
+  const tip=document.createElement('div'); tip.className='zoom-tip'; tip.textContent='點一下圖表，就能用滾輪放大縮小'; el.appendChild(tip);
+  const set=v=>{ on=v; ch.applyOptions({handleScale:{mouseWheel:v}}); el.classList.toggle('zoom-on',v); tip.classList.toggle('on',false); };
+  el.addEventListener('pointerenter',e=>{ if(e.pointerType==='mouse'&&!on) tip.classList.add('on'); });
+  el.addEventListener('pointerdown',e=>{ if(e.pointerType==='mouse'&&!on) set(true); });
+  el.addEventListener('pointerleave',e=>{ if(e.pointerType!=='mouse') return; tip.classList.remove('on'); if(on) set(false); });
 }
 /* 多張圖共用時間軸：任一張被縮放或拖曳，其他張跟著同步；onChange 收到目前顯示的起訖日期 */
 const timeStr = t => typeof t==='string'?t:(t&&t.year?`${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`:null);
@@ -199,7 +212,7 @@ function dailyCard(el){
       <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）</div>
       <div class="hero-price"><span class="px num ${cls(L.chg)}">${n2(L.idx)}</span><span class="ch num ${cls(L.chg)}">${sign(L.chg)}${n2(L.chg)}（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</span><span class="badge">加權指數收盤</span></div>
       <div class="dgrid">
-        ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
+        ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','較前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
         ${cell('外資現貨',sign(L.fiSpot)+n2(L.fiSpot)+' 億','',cls(L.fiSpot))}
         ${cell('外資 BP 金額',n0(L.bp),'BC '+n0(L.bc)+'・SC '+n0(L.sc))}
         ${cell('微台多單／空單',n0(L.mxLong)+'／'+n0(L.mxShort),'多單較前日 '+(P.mxLong==null||L.mxLong==null?'—':sign(L.mxLong-P.mxLong)+fmt(L.mxLong-P.mxLong,0)))}
@@ -314,9 +327,16 @@ function dailyNotes(){
 
 /* 主頁最下面「判斷回測」：
    1. 每日短評：開頭標「多／空／中立」的短評，看之後 7／30／90 天（日曆天）的漲跌對不對。
-   2. 每週復盤：每篇復盤的部位比上一篇高＝加碼（看多）、低＝減碼（看空），看復盤日之後的漲跌；並比較「照復盤部位」和「一直抱 1 倍」 */
-const levOf=s=>{ const p=String(s||'').split('→').pop(); if(/清倉/.test(p)) return 0; const m=p.match(/([\d.]+)\s*(x|%)/i); return m?(m[2]==='%'?+m[1]/100:+m[1]):null; };
-const LEV_EPS=0.15;   // 部位變化小於這個倍數算「維持」
+   2. 每週復盤：動作照文章持倉圖（紅框＝加碼＝看多、綠框＝減碼＝看空、沒圖或沿用上週的圖＝維持，不計分），看復盤日之後的漲跌；並比較「照復盤部位」和「一直抱 1 倍」 */
+// 部位一律顯示倍數（issue #24）：0.5x、1.0x、0.46x
+const levTxt=L=>L==null?'—':(Math.abs(L*10-Math.round(L*10))<1e-9?L.toFixed(1):String(+L.toFixed(2)))+'x';
+// 文章動作＋和上一篇比：「加碼到 0.7x（比上一篇 1.26x 為減碼）」；方向相同就不加註
+function actTxt(r,prev){
+  if(r.act==='維持'||r.actLev==null) return r.act||'—';
+  const s=`${r.act}到 ${levTxt(r.actLev)}`; if(prev==null) return s;
+  const d=r.actLev-prev, cmp=Math.abs(d)<0.005?'持平':d>0?'加碼':'減碼';
+  return cmp===r.act?s:`${s}（比上一篇 ${levTxt(prev)} ${cmp==='持平'?'持平':'為'+cmp}）`;
+}
 function judgeSec(){
   const S=window.MTXSheet, el=$('#judge'), sec=$('#judgeSec'); if(!S||!el||!sec) return;
   S.load().then(d=>{
@@ -341,9 +361,8 @@ function judgeSec(){
       :'<p class="bt-note">還沒有標方向的短評。短評開頭寫「強度＋方向」（例如「強烈看多，」「中等看空，」「中立：」），就會列入這裡。</p>';
 
     // 2. 每週復盤的部位
-    const R=D.reviews.slice().reverse().map(r=>({r,L:levOf(r.position)})).filter(x=>x.L!=null);
-    R.forEach((x,i)=>{ const p=i?R[i-1].L:null, dL=p==null?null:x.L-p;
-      x.act=dL==null?'起點':dL>=LEV_EPS?'加碼':dL<=-LEV_EPS?'減碼':'維持';
+    const R=D.reviews.slice().reverse().filter(r=>r.lev!=null).map(r=>({r,L:r.lev}));
+    R.forEach((x,i)=>{ x.act=x.r.act||'維持'; x.txt=actTxt(x.r,i?R[i-1].L:null);
       x.dir=x.act==='加碼'?'多':x.act==='減碼'?'空':null;
       x.close=closeOn(rows,x.r.date); x.ret={}; JUDGE_H.forEach(n=>x.ret[n]=fwdRet(rows,x.r.date,n)); });
     const acts=R.filter(x=>x.dir).map(x=>({dir:x.dir,r:x.ret}));
@@ -352,16 +371,16 @@ function judgeSec(){
     R.forEach((x,i)=>{ const a=x.close, b=i<R.length-1?R[i+1].close:last; if(!a||!b||b.date<=a.date) return; const r=b.idx/a.idx-1; eq*=1+x.L*r; bh*=1+r; });
     const avgL=avgArr(R.slice(0,-1).map(x=>x.L));
     const revHtml=`
-      <p class="bt-note">復盤 ${R.length} 篇：加碼 ${R.filter(x=>x.act==='加碼').length} 次、減碼 ${R.filter(x=>x.act==='減碼').length} 次、維持 ${R.filter(x=>x.act==='維持').length} 次。部位比上一篇高 ${LEV_EPS} 倍以上算加碼（看多）、低 ${LEV_EPS} 倍以上算減碼（看空），從復盤日收盤開始算（實際買賣可能在週中）。</p>
+      <p class="bt-note">復盤 ${R.length} 篇：加碼 ${R.filter(x=>x.act==='加碼').length} 次、減碼 ${R.filter(x=>x.act==='減碼').length} 次、維持 ${R.filter(x=>x.act==='維持').length} 次。動作照文章「回顧持倉狀況」的持倉圖：紅框＝加碼（看多）、綠框＝減碼（看空），沒有圖或沿用上一篇的圖＝維持；和上一篇部位方向不同時另外加註。從復盤日收盤開始算（實際買賣可能在週中）。<b>維持不計分</b>（灰字）。</p>
       ${judgeTable(acts,{7:'一週',30:'一個月',90:'一季'})}
       <div class="kpis k3 jk">
         <div class="kpi"><span>照復盤部位</span><b class="num ${cls(eq-1)}">${pctJ((eq-1)*100,1)}</b><em>${md(R[0].r.date)} 起，到 ${md(last.date)}</em></div>
         <div class="kpi"><span>一直抱 1 倍</span><b class="num ${cls(bh-1)}">${pctJ((bh-1)*100,1)}</b><em>同期間加權指數</em></div>
-        <div class="kpi"><span>平均部位</span><b class="num">${avgL==null?'—':avgL.toFixed(2)+' 倍'}</b><em>各篇復盤部位的平均</em></div>
+        <div class="kpi"><span>平均部位</span><b class="num">${avgL==null?'—':avgL.toFixed(2)+'x'}</b><em>各篇復盤部位的平均</em></div>
       </div>
-      <div class="tscroll"><table class="t bt jt"><thead><tr><th>復盤日</th><th>部位</th><th>倍數</th><th>動作</th>${JUDGE_H.map(n=>`<th>${n} 天後</th>`).join('')}</tr></thead><tbody>
-        ${R.slice().reverse().map(x=>`<tr><td><a href="${reviewUrl(x.r)}">${x.r.date.replace(/-/g,'/')}</a></td><td class="tx">${escTxt(x.r.position)}</td><td>${x.L.toFixed(2)}</td>
-          <td class="${x.act==='加碼'?'up':x.act==='減碼'?'down':''}">${x.act}</td>${JUDGE_H.map(n=>`<td>${x.dir?jCell(x.dir,x.ret[n],n):x.ret[n]==null?'<span class="pend">未到</span>':`<span class="${cls(x.ret[n])}">${pctJ(x.ret[n])}</span>`}</td>`).join('')}</tr>`).join('')}
+      <div class="tscroll"><table class="t bt jt"><thead><tr><th>復盤日</th><th class="tx">部位</th><th class="tx">動作（照文章）</th>${JUDGE_H.map(n=>`<th>${n} 天後</th>`).join('')}</tr></thead><tbody>
+        ${R.slice().reverse().map(x=>`<tr class="${x.dir?'':'jhold'}"><td><a href="${reviewUrl(x.r)}">${x.r.date.replace(/-/g,'/')}</a></td><td class="tx">${escTxt(x.r.position)}</td>
+          <td class="tx ${x.act==='加碼'?'up':x.act==='減碼'?'down':''}">${x.txt}${x.dir?'':'・不計分'}</td>${JUDGE_H.map(n=>`<td>${x.dir?jCell(x.dir,x.ret[n],n):x.ret[n]==null?'<span class="pend">未到</span>':pctJ(x.ret[n])}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div>`;
 
     el.innerHTML=`
@@ -444,11 +463,12 @@ function streakStats(dates,vals){
 }
 
 const loadMargin = () => window.MTXSheet ? MTXSheet.loadMargin() : Promise.reject(new Error('sheet.js 未載入'));
-// 顯示在每日籌碼頁；回傳 setRange(from,to)，讓每日明細跟著頁面的日期區間
-function renderCredit(M,body,noteEl){
+// 顯示在每日籌碼頁；回傳 setRange(from,to)，讓信用交易每日明細跟著頁面的日期區間
+function renderCredit(M,body,noteEl,idxOf){   // idxOf：日期→加權收盤列（idx、chg），明細「加權」欄用
   {
     const R=M.ratio||[], C=M.credit||[], E=M.etfs||{};
     const codes=Object.keys(E);
+    const brand=code=>({'00685L':'群益','00631L':'元大'}[code]||'')+code; // 明細表頭加發行商
     if(noteEl) noteEl.textContent=`資料至 ${M.updated||'—'}・每個交易日晚上 21:30 起自動更新（維持率人工填）`;
 
     /* ---- 維持率 ---- */
@@ -485,7 +505,7 @@ function renderCredit(M,body,noteEl){
     /* ---- 歷史統計 ---- */
     const dates=col(c=>c.d);
     const statRows=[['上市融資（億）',col(c=>c.twse?c.twse.loanChg:null),2],['上櫃融資（億）',col(c=>c.tpex?c.tpex.loanChg:null),2],
-      ...codes.map(code=>[`${code} 融資（張）`,etfSeries(code),0])];
+      ...codes.map(code=>[`${brand(code)} 融資（張）`,etfSeries(code),0])];
     const sumN=(v,n)=>v.slice(-n).reduce((s,x)=>s+(x||0),0);
     const rng=s=>s.n?`<b class="num">${s.n}</b> 天<em>${s.start.replace(/-/g,"/")}–${s.start.slice(0,4)===s.end.slice(0,4)?md(s.end):s.end.replace(/-/g,"/")}</em>`:'—';
     const statTable = `
@@ -495,25 +515,25 @@ function renderCredit(M,body,noteEl){
           return `<tr><td>${t}</td><td class="r">${streakTxt(s.cur)||'—'}</td><td class="r num ${cls(a)}">${sgnN(+a.toFixed(d),d)}</td><td class="r num ${cls(b)}">${sgnN(+b.toFixed(d),d)}</td><td class="r cr-rng2">${rng(s.up)}</td><td class="r cr-rng2">${rng(s.dn)}</td></tr>`; }).join('')}</tbody>
       </table></div><div class="tbl-n">最長連增／連減只計算網站已收錄的期間。</div></div>`;
 
-    /* ---- 每日明細：跟著頁面的日期區間 ---- */
+    /* ---- 信用交易每日明細：跟著頁面的日期區間 ---- */
     const cell=(v,d)=>`<td class="r num ${cls(v)}">${sgnN(v==null?null:+v.toFixed(d),d)}</td>`;
     const detail = `
-      <details class="tbl cr-detail" id="crDetail"><summary class="tbl-h" id="crDetailH">每日明細</summary><div class="tscroll tall noterm"><table class="t cr-t">
-        <thead><tr><th>日期</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${code} 資(張)</th><th class="r">連續</th><th class="r">${code} 券(張)</th>`).join('')}</tr></thead>
+      <details class="tbl cr-detail" id="crDetail"><summary class="tbl-h" id="crDetailH">信用交易每日明細</summary><div class="tscroll tall noterm"><table class="t cr-t">
+        <thead><tr><th>日期</th><th class="r">加權</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${brand(code)} 資(張)</th><th class="r">融資連續</th>`).join('')}${codes.map(code=>`<th class="r">${brand(code)} 券(張)</th>`).join('')}</tr></thead>
         <tbody id="crRows"></tbody>
-      </table></div></details>`;
+      </table></div><div class="tbl-n">加權＝加權指數收盤，紅字＝當天收漲、綠字＝收跌。</div></details>`;
     const MAXROWS=400;
     const setRange=(from,to)=>{
       const rows=C.map((c,i)=>({c,i})).filter(({c})=>c.d>=from&&c.d<=to).reverse();
       const yr=from.slice(0,4)!==to.slice(0,4), dd=d=>yr?d.replace(/-/g,'/'):md(d);
       const tb=$('#crRows'), hd=$('#crDetailH'); if(!tb) return;
-      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>${cell(e&&e.shortChg,0)}`; }).join('')}</tr>`).join('');
-      hd.textContent=`每日明細（${from.replace(/-/g,'/')} – ${to.replace(/-/g,'/')}・${rows.length} 個交易日${rows.length>MAXROWS?`，顯示最近 ${MAXROWS} 天`:''}）`;
+      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${(x=>x&&x.idx!=null?`<td class="r num ${cls(x.chg)}">${n2(x.idx)}</td>`:'<td class="r">—</td>')(idxOf&&idxOf.get(c.d))}${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>`; }).join('')}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return cell(e&&e.shortChg,0); }).join('')}</tr>`).join('');
+      hd.textContent=`信用交易每日明細（${from.replace(/-/g,'/')} – ${to.replace(/-/g,'/')}・${rows.length} 個交易日${rows.length>MAXROWS?`，顯示最近 ${MAXROWS} 天`:''}）`;
     };
 
     body.innerHTML=`<div class="grid2 cr-grid">${ratioCard}${dayCard}</div>${C.length?statTable+detail:''}`;
 
-    /* ---- 維持率走勢圖 ---- */
+    /* ---- 維持率走勢圖（只放在這裡；上方「籌碼走勢」不再重複放，issue #27） ---- */
     if(r1&&window.LightweightCharts){
       const ch=baseChart($('#crChart'));
       const s=ch.addLineSeries({color:'#60A5FA',lineWidth:2,priceFormat:{type:'custom',formatter:v=>v.toFixed(0)+'%'}});
@@ -557,8 +577,8 @@ function renderReview(id){
       <div class="pills">${r.pills.map(([c,t])=>`<span class="pill ${c}">${t}</span>`).join('')}</div>
       <div class="r-ohlc num">
         <div><span>收盤</span><b class="${cls(r.chg)}">${fmt(r.close)}</b></div>
-        <div><span>漲跌</span><b class="${cls(r.chg)}">${sign(r.chg)}${fmt(r.chg)}（${sign(r.pct)}${r.pct}%）</b></div>
-        <div><span>開盤</span><b>${fmt(r.o)}</b></div><div><span>最高</span><b>${fmt(r.h)}</b></div><div><span>最低</span><b>${fmt(r.l)}</b></div><div><span>成交值</span><b>${r.vol}</b></div>
+        <div><span>漲跌</span><b class="brk ${cls(r.chg)}"><span class="nw">${sign(r.chg)}${fmt(r.chg)}</span><span class="nw">（${sign(r.pct)}${r.pct}%）</span></b></div>
+        <div><span>開盤</span><b>${fmt(r.o)}</b></div><div><span>最高</span><b>${fmt(r.h)}</b></div><div><span>最低</span><b>${fmt(r.l)}</b></div><div><span>成交金額</span><b>${r.vol}</b></div>
       </div>
       <div class="r-actions"><a class="btn" href="${pdfUrl(r)}" target="_blank" rel="noopener">📄 原始筆記 PDF</a><a class="btn" href="#market">📰 當週市場資訊</a><span class="badge" style="align-self:center">部位：${r.position}</span></div>
     </div>
@@ -611,8 +631,9 @@ function renderReview(id){
    每日籌碼頁（讀 Google 試算表）
    ===================================================================== */
 /* 落底訊號：收跌日由 sheet.js 的 dropSignals 計算兩組（微台／小+微），每組 4 項，前面的數字＝滿足幾項；
-   任一組 4 項全滿足＝強烈落底。「幅度」「連續三天期貨逆增」仍讀試算表欄位 */
-const SIG = [['sigAmp','落底・幅度'],['sig3','連續三天期貨逆增']];
+   任一組 4 項全滿足＝強烈落底。「連續三天期貨逆增」仍讀試算表欄位。
+   試算表「幅度」欄（強烈落底後離真正低點多遠，過去人工填）不再顯示：訊號回測表一的「30 日內最低跌幅」「波段低點跌幅」已自動計算 */
+const SIG = [['sig3','連續三天期貨逆增']];
 const sigOn = v => v!=null && v!=='' && v!=='0';
 const isStrong = r => !!((r.g1&&r.g1.n===4)||(r.g2&&r.g2.n===4));
 const sigGroups = r => [r.g1,r.g2].filter(g=>g&&g.n).map(g=>`${g.n}｜${g.items.join('、')}`);
@@ -625,10 +646,10 @@ const pctTxt = v => v==null?'—':v+'%';
 
 /* 明細表可選欄位：[key, 欄名, 格式, 群組, 預設顯示] */
 const COLS = [
-  ['idx','加權','n2','大盤',1],['chg','漲跌','c2','大盤',0],['pct','漲跌%','pct','大盤',1],['vol','成交量(億)','n0','大盤',0],
-  ['fiSpot','外資現貨(億)','c2','外資期貨',1],['fiOI','外資期貨<br>總未平倉','c0','外資期貨',0],['fiRel','外資期貨<br>相對結算','c0','外資期貨',1],['fiDelta','前日增減','c0','外資期貨',1],
+  ['idx','加權','n2','大盤',1],['chg','漲跌','c2','大盤',0],['pct','漲跌%','pct','大盤',1],['vol','成交金額(億)','n0','大盤',0],
+  ['fiSpot','外資現貨(億)','c2','外資期貨',1],['fiOI','外資期貨<br>總未平倉','c0','外資期貨',0],['fiRel','外資期貨<br>相對結算','c0','外資期貨',1],['fiDelta','較前日','c0','外資期貨',1],
   ['bp','BP 金額','n0','外資選擇權',1],['sp','SP 金額','n0','外資選擇權',0],['bc','BC 金額','n0','外資選擇權',0],['sc','SC 金額','n0','外資選擇權',0],['bpsp','BP/SP<br>增幅比','r1','外資選擇權',0],['bcsc','BC/SC<br>增幅比','r1','外資選擇權',0],
-  ['mxLong','微台多','n0','散戶',1],['mxShort','微台空','n0','散戶',1],['rtLong','小+微多','n0','散戶',0],['rtShort','小+微空','n0','散戶',0],['rtLongPct','多單百分位','pp','散戶',1],['rtShortPct','空單百分位','pp','散戶',0],
+  ['mxLong','微台多','n0','散戶',1],['mxShort','微台空','n0','散戶',1],['rtLong','小+微多','n0','散戶',0],['rtShort','小+微空','n0','散戶',0],['rtLongPct','微台多單百分位','pp','散戶',1],['rtShortPct','微台空單百分位','pp','散戶',0],
   ['sig','訊號','sig','訊號',1]
 ];
 const COLS_KEY='mtx-cols-v2';   // v2：散戶預設改為微台多／空（舊的欄位選擇會重設為預設）
@@ -654,7 +675,7 @@ function renderChips(){
   const main=$('#main');
   Promise.all([window.MTXSheet.load(), loadMargin().catch(()=>null)]).then(([data,M])=>{
     const R=data.rows, L=R[R.length-1], P=R[R.length-2]||{};
-    const MC=(M&&M.credit)||[], MR=(M&&M.ratio)||[], ME=(M&&M.etfs)||{};
+    const MC=(M&&M.credit)||[], ME=(M&&M.etfs)||{};
     const lastStrong=[...R].reverse().find(isStrong);
     const delta=k=>L[k]!=null&&P[k]!=null?L[k]-P[k]:null;
     const kpi=(label,val,sub)=>`<div class="kpi"><span>${label}</span><b class="num">${val}</b><em>${sub}</em></div>`;
@@ -662,26 +683,31 @@ function renderChips(){
     const back=n=>new Date((dayNumOf(L.date)-n)*864e5).toISOString().slice(0,10);
     const first=R[0].date, last=L.date;
     const ecodes=Object.keys(ME);
+    const mLast=get=>{ for(let k=MC.length-1;k>=0;k--){ const v=get(MC[k]); if(v!=null) return v; } return null; };   // 最新一筆有數字的（櫃買可能晚一天）
     const panes=[['加權指數','紅箭頭＝強烈落底・紫箭頭＝BP紅燈'],['外資期貨未平倉','口・相對結算日'],['外資選擇權金額','BP 紫・SP 紅・BC 黃・SC 綠'],['散戶多空（微台）','多單紅・空單綠（口）'],
-      ...(MR.length?[['大盤融資維持率','上市扣除 ETF・玩股網・虛線＝130%']]:[]),
-      // 第三項 1＝預設收起，點標題才展開
-      ...(MC.length?[['融資餘額','上市紅・上櫃黃（億）',1],['融券餘額','上市紅・上櫃黃（張）',1],['正二 ETF 融資餘額',`${ecodes.map((c,i)=>`${c} ${['紅','黃'][i]||''}`).join('・')}（張）`,1]]:[])];
+      // 第三項＝收起時標題列顯示的最新數字（有這項就預設收起，點標題才展開）；收起的這幾張放在「信用交易」區最下面（信用交易每日明細之後）
+      ...(MC.length?[['融資餘額','上市紅・上櫃黃（億）',`上市 ${n0(mLast(x=>x.twse&&x.twse.loan))} 億・上櫃 ${n0(mLast(x=>x.tpex&&x.tpex.loan))} 億`],
+        ['融券餘額','上市紅・上櫃黃（張）',`上市 ${n0(mLast(x=>x.twse&&x.twse.short))} 張・上櫃 ${n0(mLast(x=>x.tpex&&x.tpex.short))} 張`],
+        ['正二 ETF 融資餘額',`${ecodes.map((c,i)=>`${c} ${['紅','黃'][i]||''}`).join('・')}（張）`,ecodes.map(c=>`${c} ${n0(mLast(x=>x.etf&&x.etf[c]&&x.etf[c].loan))} 張`).join('・')]]:[])];
+    const paneHtml=([h,sub,fold],i)=>{
+      const head=`<span>${h}</span> <span class="sub">${sub}</span>${fold?`<span class="fold-last num">${fold}</span>`:''}`, body=`<div class="chart tall"><div class="chart-legend num" id="lg${i}"></div><div id="ch${i}" style="position:absolute;inset:0"></div></div>`;
+      return fold?`<details class="card fold"><summary class="card-h">${head}</summary>${body}</details>`:`<div class="card"><div class="card-h">${head}</div>${body}</div>`; };
     main.innerHTML = `
       <div class="crumb"><a href="index.html">主頁</a><span>/</span><span>每日籌碼</span></div>
       <div class="card r-head">
         <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）${L.settle===999?'・結算日':''}</div>
         <h1>每日籌碼</h1>
-        <div class="r-ohlc num">
+        <div class="r-ohlc two num">
           <div><span>加權收盤</span><b class="${cls(L.chg)}">${n2(L.idx)}</b></div>
-          <div><span>漲跌</span><b class="${cls(L.chg)}">${sign(L.chg)}${n2(L.chg)}（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</b></div>
-          <div><span>成交量</span><b>${n0(L.vol)} 億</b></div>
+          <div><span>漲跌</span><b class="brk ${cls(L.chg)}"><span class="nw">${sign(L.chg)}${n2(L.chg)}</span><span class="nw">（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</span></b></div>
+          <div><span>成交金額</span><b>${n0(L.vol)} 億</b></div>
           <div><span>外資現貨</span><b class="${cls(L.fiSpot)}">${sign(L.fiSpot)}${n2(L.fiSpot)} 億</b></div>
         </div>
         <div class="sigs"><span class="sigs-h">今日訊號</span>${sigPills(L)}
           ${lastStrong?`<span class="sigs-last">最近一次強烈落底：<b class="num">${lastStrong.date.replace(/-/g,'/')}</b>・<a href="signals.html#strong" style="color:#93C5FD">看訊號回測 →</a></span>`:''}</div>
       </div>
       <div class="card" style="margin-top:12px"><div class="kpis k4">
-        ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`前日增減 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
+        ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`較前日 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
         ${kpi('外資 BP 金額',n0(L.bp),`較前日 ${sgn0(delta('bp'))}・BP/SP 增幅比 ${L.bpsp==null?'—':L.bpsp.toFixed(1)+'%'}`)}
         ${kpi('外資 BC／SC 金額',`${n0(L.bc)}／${n0(L.sc)}`,`BC/SC 增幅比 ${L.bcsc==null?'—':L.bcsc.toFixed(1)+'%'}`)}
         ${kpi('微台多單／空單',`${n0(L.mxLong)}／${n0(L.mxShort)}`,`多單較前日 ${sgn0(delta('mxLong'))}・空單較前日 ${sgn0(delta('mxShort'))}`)}
@@ -694,19 +720,18 @@ function renderChips(){
           <div class="dates"><label><span>起</span><input type="date" id="dFrom" min="${first}" max="${last}"></label><i>–</i><label><span>迄</span><input type="date" id="dTo" min="${first}" max="${last}"></label></div>
           <span class="rb-note num">可選 ${first.replace(/-/g,'/')} – ${last.replace(/-/g,'/')}</span>
         </div>
-        <div class="stack">${panes.map(([h,sub,fold],i)=>{
-          const head=`<span>${h}</span> <span class="sub">${sub}</span>`, body=`<div class="chart tall"><div class="chart-legend num" id="lg${i}"></div><div id="ch${i}" style="position:absolute;inset:0"></div></div>`;
-          return fold?`<details class="card fold"><summary class="card-h">${head}</summary>${body}</details>`:`<div class="card"><div class="card-h">${head}</div>${body}</div>`; }).join('')}
+        <div class="stack">${panes.map((p,i)=>p[2]?'':paneHtml(p,i)).join('')}
         </div>
       </section>
 
       <section class="sec" id="credit">
         <div class="sec-h"><h2>信用交易</h2><p id="creditNote">每個交易日晚上 21:30 起自動更新</p></div>
         <div id="creditBody">${M?'':'<div class="card"><p class="empty">讀不到信用交易資料。</p></div>'}</div>
+        ${panes.some(p=>p[2])?`<div class="stack cr-charts">${panes.map((p,i)=>p[2]?paneHtml(p,i):'').join('')}</div>`:''}
       </section>
 
       <section class="sec" id="tbl">
-        <div class="sec-h"><h2>每日明細</h2>
+        <div class="sec-h"><h2>籌碼每日明細</h2>
           <details class="colpick" id="colpick"><summary>顯示欄位</summary><div class="cp-body">
             ${[...new Set(COLS.map(c=>c[3]))].map(g=>`<div class="cp-g"><b>${g}</b>${COLS.filter(c=>c[3]===g).map(c=>`<label><input type="checkbox" value="${c[0]}">${c[1].replace('<br>','')}</label>`).join('')}</div>`).join('')}
             <div class="cp-act"><button type="button" data-act="all">全選</button><button type="button" data-act="def">恢復預設</button></div>
@@ -736,10 +761,10 @@ function renderChips(){
       cols=a==='all'?COLS.map(c=>c[0]):colsDefault(); colsSave(cols); syncChecks(); drawTable(); });
     syncChecks();
 
-    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote')) : null;
+    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote'),new Map(R.map(r=>[r.date,r]))) : null;
     const charts=[], legends=[]; let sync=null;
     const clamp=d=>d<first?first:d>last?last:d;
-    // 日期區間：按鈕、起訖日期，或直接在任一張圖上滾輪縮放、拖曳，都會同步到所有圖、明細表、信用交易明細
+    // 日期區間：按鈕、起訖日期，或直接在任一張圖上（點一下後）滾輪縮放、拖曳，都會同步到所有圖、明細表、信用交易明細
     const showRange=(from,to,preset)=>{
       range=[from,to]; dFrom.value=from; dTo.value=to;
       [...$('#range').children].forEach(b=>b.classList.toggle('on',b.dataset.n===String(preset)));
@@ -776,7 +801,7 @@ function renderChips(){
     s1.setData(R.filter(r=>r.fiRel!=null).map(r=>({time:T(r),value:r.fiRel,color:r.fiRel>=0?UP:(r.fiRel<=-10000?DN:'rgba(16,185,129,.5)')})));
     s1.createPriceLine({price:-20000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'−2萬'});
     s1.createPriceLine({price:10000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'+1萬'});
-    legend(1,r=>`相對結算 <b class="${cls(r.fiRel)}">${n0(r.fiRel)}</b> 前日 <span class="${cls(r.fiDelta)}">${n0(r.fiDelta)}</span> 總未平倉 ${n0(r.fiOI)}`,c);
+    legend(1,r=>`相對結算 <b class="${cls(r.fiRel)}">${n0(r.fiRel)}</b> 較前日 <span class="${cls(r.fiDelta)}">${n0(r.fiDelta)}</span> 總未平倉 ${n0(r.fiOI)}`,c);
 
     c=mk(2); lines(c,[['sc','#10B981'],['bc','#F59E0B'],['sp','#EF4444'],['bp','#A855F7']]);
     legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">SP ${n0(r.sp)}</span> <span style="color:#F59E0B">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
@@ -791,15 +816,10 @@ function renderChips(){
       const show=t=>{ const x=at(t); if(x) el.innerHTML=`<b>${x.d.replace(/-/g,'/')}</b> `+fn(x); }; show(); c.subscribeCrosshairMove(p=>show(p&&timeStr(p.time))); legends.push(show); };
     const mLine=(c,rows,get,color,fmtFn)=>{ const s=c.addLineSeries({color,lineWidth:2,lastValueVisible:false,priceLineVisible:false,priceFormat:fmtFn?{type:'custom',formatter:fmtFn}:{type:'volume'}});
       s.setData(rows.map(x=>({time:x.d,value:get(x)})).filter(p=>p.value!=null)); return s; };
-    if(MR.length){
-      const rows=MR.map(x=>({d:x[0],r:x[1],b:x[2]}));
-      c=mk(pi); const s=mLine(c,rows,x=>x.r,'#60A5FA',v=>v.toFixed(0)+'%');
-      s.createPriceLine({price:130,color:UP,lineStyle:2,lineWidth:1,axisLabelVisible:true,title:'130%'});
-      mLegend(pi,c,rows,x=>`維持率 <b class="${x.r<130?'pend':''}">${x.r.toFixed(2)}%</b>${x.b==null?'':`・融資（扣除 ETF）${fmt(x.b)} 億`}`); pi++;
-    }
     if(MC.length){
       const g=(x,a,b)=>x[a]?x[a][b]:null;
-      c=mk(pi); mLine(c,MC,x=>g(x,'twse','loan'),'#EF4444'); mLine(c,MC,x=>g(x,'tpex','loan'),'#F59E0B');
+      c=mk(pi); const yi=v=>fmt(v,0);   // 單位是億，刻度直接寫數字（不要 4K 這種寫法）
+      mLine(c,MC,x=>g(x,'twse','loan'),'#EF4444',yi); mLine(c,MC,x=>g(x,'tpex','loan'),'#F59E0B',yi);
       mLegend(pi,c,MC,x=>`上市 <b>${fmt(g(x,'twse','loan'))}</b> 億 <span class="${cls(g(x,'twse','loanChg'))}">${sgnN(g(x,'twse','loanChg'),2)}</span>・上櫃 <b>${fmt(g(x,'tpex','loan'))}</b> 億 <span class="${cls(g(x,'tpex','loanChg'))}">${sgnN(g(x,'tpex','loanChg'),2)}</span>`); pi++;
       c=mk(pi); mLine(c,MC,x=>g(x,'twse','short'),'#EF4444'); mLine(c,MC,x=>g(x,'tpex','short'),'#F59E0B');
       mLegend(pi,c,MC,x=>`上市 <b>${n0(g(x,'twse','short'))}</b> 張 <span class="${cls(g(x,'twse','shortChg'))}">${sgnN(g(x,'twse','shortChg'))}</span>・上櫃 <b>${n0(g(x,'tpex','short'))}</b> 張 <span class="${cls(g(x,'tpex','shortChg'))}">${sgnN(g(x,'tpex','shortChg'))}</span>`); pi++;
@@ -812,8 +832,15 @@ function renderChips(){
     // 圖表剛建立時還量不到寬度，第一次設定的區間可能失效；量到寬度後再套用一次
     const ro=window.ResizeObserver&&new ResizeObserver(()=>{ if($('#ch0').clientWidth){ ro.disconnect(); setTimeout(()=>sync.set(range[0],range[1]),0); } });
     if(ro) ro.observe($('#ch0')); setTimeout(()=>sync.set(range[0],range[1]),120);
-    // 收起的圖打開時才量得到寬度，打開後套用目前的日期區間
-    main.querySelectorAll('details.fold').forEach(d=>d.addEventListener('toggle',()=>{ if(d.open) setTimeout(()=>sync.set(range[0],range[1]),0); }));
+    // 收起的圖打開時才量得到寬度：等量到寬度，再重設上下刻度、套用目前的日期區間（收起時被同步過的範圍可能是錯的）
+    main.querySelectorAll('details.fold').forEach(d=>d.addEventListener('toggle',()=>{
+      if(!d.open) return;
+      const el=d.querySelector('[id^="ch"]'), c=charts[+el.id.slice(2)]; let tries=0;
+      const go=()=>{ if(!el.clientWidth&&++tries<60) return requestAnimationFrame(go);
+        if(c) c.priceScale('right').applyOptions({autoScale:true});
+        sync.set(range[0],range[1]); };
+      requestAnimationFrame(go);
+    }));
   }).catch(err=>{
     main.innerHTML=`<div class="card r-head"><h1>每日籌碼</h1><p style="margin-top:8px;color:var(--muted)">讀不到籌碼試算表（${String(err&&err.message||err)}）。請確認試算表的共用設定仍是「知道連結的任何人都能檢視」，再重新整理頁面。</p></div>`;
   });
@@ -825,7 +852,7 @@ function renderChips(){
 const PEND = /^(未達成|未突破|未站回|未確認|未再跌破)/;
 function btFmt(v,f){
   if(v===null||v===undefined||v==='') return '—';
-  if(typeof v!=='number') return String(v);
+  if(typeof v!=='number') return String(v).replace(/(\d{4})-(\d{2})-(\d{2})/g,'$1/$2/$3');   // 日期一律顯示 2026/11/02
   if(f==='pct') return (v>0?'+':'')+v.toFixed(2)+'%';
   if(f==='pct0') return v.toFixed(2)+'%';
   if(f==='num') return fmt(v,2);
@@ -916,7 +943,7 @@ function renderSignals(){
 
     const lead=s=>{
       const ex=r=>btPick(s.excess,{'持有週期':r});
-      if(s.id==='strong') return `計入 ${bv(s.count)} 筆訊號（原始 ${bv(s.raw)} 筆，冷卻期移除：${s.removed.length?s.removed.join('、'):'無'}）。
+      if(s.id==='strong') return `計入 ${bv(s.count)} 筆訊號（原始 ${bv(s.raw)} 筆，冷卻期移除：${s.removed.length?s.removed.map(dt).join('、'):'無'}）。
         首日收盤進場持有 30 天，勝率 ${bv(ex('30天')['訊號勝率'],'pct0')}（所有交易日基準 ${bv(ex('30天')['基準勝率'],'pct0')}），
         期望值 ${bv(ex('30天')['訊號期望值'],'pct')}（基準 ${bv(ex('30天')['基準期望值'],'pct')}），超額 ${bv(ex('30天')['超額期望值'],'pct',1)}。`;
       // BP 系列：亮燈前 30 天（日曆天）內自高點的跌幅；BC 系列：自低點的漲幅
@@ -1209,7 +1236,7 @@ function renderSignals(){
         </tbody></table></div>
         <p class="bt-note bt-after">每格上面是平均報酬（第 N 天收盤比起算日收盤的漲跌幅，所有次數平均），下面是下跌機率（歷史上第 N 天收盤比起算日低的次數占幾成；次數少時只代表過去的結果，不代表下次的機率）；紫底＝下跌機率比基準高 15 個百分點以上（最後一欄是高 10 個百分點以上）。
           全部只用當天就知道的資訊：「熄燈」＝前一個交易日亮、當天沒亮；「連續亮 K 天以上後熄燈」看的是熄燈前連續亮了幾個交易日。
-          「一段亮燈的最後一天」要等之後沒再亮才知道，等於偷看未來，所以不用。外資期貨淨單＝工作表1「外資(大小台)期貨未平倉」，由 ≥0 變成 &lt;0。${ext.some(r=>r.key==='ratio')?'BC÷SC 是同一天外資 BC 金額除以 SC 金額，用來排除「大盤上漲讓 BC 金額跟著變大」的影響，只當參考。':''}</p>
+          「一段亮燈的最後一天」要等之後沒再亮才知道，等於偷看未來，所以不用。外資期貨淨單＝外資(大小台)期貨總未平倉，由 ≥0 變成 &lt;0。${ext.some(r=>r.key==='ratio')?'BC÷SC 是同一天外資 BC 金額除以 SC 金額，用來排除「大盤上漲讓 BC 金額跟著變大」的影響，只當參考。':''}</p>
         <h3 class="bt-h3">2012 年以來跌 10% 以上的高點：高點前 90 天內有沒有亮燈？</h3>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">高點（收盤）</th><th class="r">高點收盤</th><th class="r">之後最低</th><th class="r">最大跌幅</th><th class="r">高點前 90 天內亮燈</th><th class="r">最近一次亮燈</th></tr></thead><tbody>
           ${H.tops.map(t=>`<tr><td class="r">${dt(t.date)}</td><td class="r">${fmt(t.close)}</td><td class="r">${dt(t.low)}</td><td class="r down">${btFmt(t.drop,'pct')}</td>
@@ -1298,7 +1325,7 @@ function renderSignals(){
     // 歷史走勢圖（各分頁共用）
     const histHtml=(s,note)=>`
         <h2 class="bt-h2" id="${s.id}-history">訊號在歷史走勢上的位置</h2>
-        <p class="bt-note">${note||'箭頭＝計入的訊號首日。'}滑鼠滾輪放大縮小、按住拖曳左右移動（手機：兩指縮放、左右滑動），雙擊回到全部；點一下箭頭附近可跳到表一那一列。</p>
+        <p class="bt-note">${note||'箭頭＝計入的訊號首日。'}點一下圖表後可用滑鼠滾輪放大縮小，按住拖曳左右移動（手機：兩指縮放、左右滑動），雙擊回到全部；點一下箭頭附近可跳到表一那一列。</p>
         <div class="card"><div class="bt-chartbar">
           <div class="tabs" data-preset="${s.id}">${[['1Y',365],['3Y',1095],['5Y',1826],['10Y',3652],['全部',0]].map(([t,n])=>`<button data-n="${n}"${n?'':' class="on"'}>${t}</button>`).join('')}</div>
           <div class="bt-dates"><input type="date" data-from="${s.id}" aria-label="起始日期"><i>–</i><input type="date" data-to="${s.id}" aria-label="結束日期"></div>
@@ -1474,7 +1501,7 @@ function renderSignals(){
         <span class="bt-switch-sub" id="btSwSub"></span></div></div>
       ${res.signals.map(section).join('')}
       <details class="card bt-details" id="definitions"><summary>定義與計算方式</summary><ul>
-        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、「強烈落底」欄（BE 欄，值為 O）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC、SC、BP、SP 金額與 BP 口數；研發處「噴出型」另外讀信用交易試算表的上市融資金額。網頁開啟時即時讀取並計算。</li>
+        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、落底訊號用到的欄位（強烈落底由網站自算，規則同每日籌碼頁）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC（H 欄）、SC、BP、SP 金額與 BP 口數；研發處「噴出型」另外讀信用交易試算表的上市融資金額。網頁開啟時即時讀取並計算。</li>
         <li><b>持有週期</b>：7／14／30／60／90 個日曆天（BP極端過熱紅燈另外加上「第一次穩定達到 100%」那天與 120 天，這個天數會隨新資料浮動；BP過熱紫燈、BP紫爆與 BC 系列加上 120 天），出場價取到期日當天或之前最後一個交易日的收盤。資料不足一個完整週期的事件列為「未完成」，不計入統計。</li>
         <li><b>燈號（逐日判斷）</b>：當天的值 ≥ 當天以前（含當天）所有資料由大到小第 k 大的值，k＝資料天數×門檻百分比，無條件捨去、至少 1。只用當天以前的資料，所以不會因為後來的資料而改變（試算表的條件格式是拿整欄比較、包含之後的資料，舊日期的顏色會和這裡不同）。2012 年起判斷；連續亮燈只取第一天，距離上一個亮燈日滿 10 個交易日才算新的一次。
           <ul>
@@ -1529,9 +1556,9 @@ function renderSignals(){
       if(made[s.id]||!window.LightweightCharts) return; made[s.id]=1;
       const el=$('#'+s.id+'-hc'), lg=$('#'+s.id+'-lg');
       const ch=baseChart(el,{rightPriceScale:{borderColor:'#232B3A',mode:1},timeScale:{borderColor:'#232B3A',fixLeftEdge:true,fixRightEdge:true,minBarSpacing:0.05},
-        // 滑鼠滾輪＝放大縮小（以滑鼠位置為中心）；按住拖曳＝左右移動；手機兩指縮放、左右滑動，上下滑仍捲動頁面
+        // 點一下圖表後滾輪＝放大縮小（以滑鼠位置為中心，見 clickToZoom）；按住拖曳＝左右移動；手機兩指縮放、左右滑動，上下滑仍捲動頁面
         handleScroll:{mouseWheel:false,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
-        handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:false},axisDoubleClickReset:false}});
+        handleScale:{mouseWheel:false,pinch:true,axisPressedMouseMove:{time:true,price:false},axisDoubleClickReset:false}});
       (window.__btCharts||(window.__btCharts={}))[s.id]=ch;   // 方便在主控台檢查
       const ser=ch.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.2)',bottomColor:'rgba(96,165,250,.02)',lineWidth:1.5,priceFormat:{type:'price',precision:0,minMove:1}});
       ser.setData(mk.d.map((d,i)=>({time:d,value:mk.c[i]})));
@@ -1546,7 +1573,7 @@ function renderSignals(){
       ch.timeScale().fitContent();
       const show=t=>{ const i=t?mk.idxOf.get(t):LAST, tp=tops.find(x=>x.d===mk.d[i]); lg.innerHTML=`<b>${dt(mk.d[i])}</b> 加權 <b>${fmt(mk.c[i])}</b>${evd.includes(mk.d[i])?` ・<span style="color:${mcol}">${nm}</span>`:''}${tp?` ・<span style="color:${TOP_MARK}">起跌點（${tp.X}）</span>`:''}`; };
       show(); ch.subscribeCrosshairMove(p=>show(p&&tStr(p.time)));
-      /* ---- 日期區間：滑鼠滾輪放大縮小、按住拖曳左右移動；快速按鈕與起訖日期；雙擊回到全部 ---- */
+      /* ---- 日期區間：點一下圖表後滾輪放大縮小、按住拖曳左右移動；快速按鈕與起訖日期；雙擊回到全部 ---- */
       const first=mk.d[0], lastD=mk.d[LAST];
       const tStr=t=>typeof t==='string'?t:(t&&t.year?`${t.year}-${String(t.month).padStart(2,'0')}-${String(t.day).padStart(2,'0')}`:null);
       const back=n=>new Date((dayNumOf(lastD)-n)*864e5).toISOString().slice(0,10);
@@ -1656,10 +1683,12 @@ const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const escHTML = s => s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const squash = s => s.replace(/\s/g,'').toLowerCase();
 // 忽略空白；英數開頭／結尾要是完整單字（BP 不會命中 BPS）
+// 燈號與名詞都是外資；「自營 BP 過熱」這類自營商數字不連結、不算搜尋命中
+const NOT_DEALER='(?<!自營\\s?)';
 function termPat(n){
   const t=n.trim(); if(!t) return null;
   const core=[...t.replace(/\s/g,'')].map(escRe).join('\\s*');
-  return (/^[A-Za-z0-9]/.test(t)?'(?<![A-Za-z0-9])':'')+core+(/[A-Za-z0-9]$/.test(t)?'(?![A-Za-z0-9])':'');
+  return NOT_DEALER+(/^[A-Za-z0-9]/.test(t)?'(?<![A-Za-z0-9])':'')+core+(/[A-Za-z0-9]$/.test(t)?'(?![A-Za-z0-9])':'');
 }
 const glossOf = q => (D.glossary||[]).find(([names])=>names.split('|').some(n=>squash(n)===squash(q)));
 // 查詢字串 → {re, g}；與名詞表相符時一併搜尋同義詞（紫爆／紫燈）
@@ -1812,7 +1841,7 @@ function glossary(root){
     pats.push({n,p:/^[\w]/.test(n)?`(?<![A-Za-z0-9])${esc}(?![A-Za-z0-9])`:esc});
   }));
   pats.sort((a,b)=>b.n.length-a.n.length);
-  const re=new RegExp(pats.map(x=>x.p).join('|'),'g');
+  const re=new RegExp(NOT_DEALER+'(?:'+pats.map(x=>x.p).join('|')+')','g');
   const SKIP='a,script,style,.noterm,.term,.chart,.chart-legend,.toc,.nav,.num,button,.colpick,#dtable';
   const seen=new WeakMap();
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>

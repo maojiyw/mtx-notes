@@ -98,8 +98,10 @@ b,strong{font-weight:600;color:#fff}
 .r-head h1{font-size:25px;line-height:1.4;margin:4px 0 6px}
 .r-ohlc{display:grid;grid-template-columns:repeat(6,auto);gap:4px 22px;margin-top:16px;justify-content:start}
 .r-ohlc div{display:flex;flex-direction:column}
-.r-ohlc span{font-size:12px;color:var(--muted)}
-.r-ohlc b{font-size:15px}
+.r-ohlc>div>span{font-size:12px;color:var(--muted)}
+.r-ohlc b{font-size:15px;white-space:nowrap}   /* 手機上數字和單位不拆行 */
+.r-ohlc b.brk{white-space:normal}
+.r-ohlc .nw{white-space:nowrap}
 .r-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:1px solid var(--line2);font-size:13px;color:var(--text)}
 .btn:hover{border-color:var(--accent)}
@@ -131,6 +133,11 @@ table.t tr.hl td{background:rgba(59,130,246,.08)}
 .tbl-h{padding:9px 12px;font-size:13px;font-weight:600;border-bottom:1px solid var(--line)}
 .tbl-n{padding:8px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}
 .tscroll{overflow-x:auto}
+/* 左右拉動表格時，第一欄（名稱／日期）固定在左邊 */
+.tscroll table.t:not(.bt) th:first-child,.tscroll table.t:not(.bt) td:first-child{position:sticky;left:0;z-index:1;background:var(--card2);box-shadow:inset -1px 0 0 var(--line)}
+.card > .tscroll table.t:not(.bt) th:first-child,.card > .tscroll table.t:not(.bt) td:first-child{background:var(--card)}
+.tscroll table.t:not(.bt) tr.hl td:first-child{background:linear-gradient(rgba(59,130,246,.08),rgba(59,130,246,.08)) var(--card2)}
+.tscroll.tall table.t:not(.bt) thead th:first-child{z-index:3;background:var(--card)}
 .bar{display:inline-block;height:6px;border-radius:3px;background:var(--accent);vertical-align:middle;margin-right:8px;opacity:.85}
 
 .days{display:grid;gap:10px}
@@ -170,9 +177,11 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
 .tabs button{font:inherit;font-size:12px;color:var(--muted);background:none;border:0;border-radius:6px;padding:4px 10px;cursor:pointer}
 .tabs button.on{background:var(--card2);color:var(--text);box-shadow:inset 0 0 0 1px var(--line2)}
 .stack{display:grid;gap:12px}
+.cr-charts{margin-top:12px}   /* 信用交易區最下面的融資／融券／ETF 餘額圖 */
 .chart.tall{height:260px}
 .t.daily td,.t.daily th{white-space:nowrap}
 .t.daily tr.sig td{background:rgba(239,68,68,.08)}
+.card > .tscroll .t.daily tr.sig td:first-child{background:linear-gradient(rgba(239,68,68,.08),rgba(239,68,68,.08)) var(--card)}
 .t.daily .sigcell{color:#F87171;font-size:12px;white-space:normal;min-width:220px}
 
 /* ---------- feature tabs & cards ---------- */
@@ -247,6 +256,7 @@ footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);color:v
   .day{grid-template-columns:110px minmax(0,1fr)}
   .day .body{grid-column:1/-1}
   .r-ohlc{grid-template-columns:repeat(3,auto)}
+  .r-ohlc.two{grid-template-columns:repeat(2,auto)}
 }
 @media (max-width:560px){
   .rb-note{margin-left:0;width:100%}
@@ -552,7 +562,7 @@ table.t.bt td.bt-top{background:rgba(168,85,247,.16)}
 .jcard{padding:16px 18px}
 .jcard>h3{font-size:16px;margin-bottom:10px}
 table.t.bt.jt th,table.t.bt.jt td{text-align:right}
-table.t.bt.jt th:first-child,table.t.bt.jt td:first-child,table.t.bt.jt td.tx{text-align:left}
+table.t.bt.jt th:first-child,table.t.bt.jt td:first-child,table.t.bt.jt td.tx,table.t.bt.jt th.tx{text-align:left}
 table.t.bt.jt td .pend{margin-left:6px}
 .kpis.k3.jk{grid-template-columns:repeat(3,1fr);margin:14px 0}
 @media (max-width:720px){ .kpis.k3.jk{grid-template-columns:1fr} }
@@ -567,3 +577,12 @@ table.t.bt.jt td .pend{margin-left:6px}
 .bt-switch-sub .bt-subtab{font-size:12.5px;padding:4px 10px;border-radius:999px}
 .bt-subtab[aria-selected="true"]{border-color:var(--sc,var(--line2))}
 @media (max-width:720px){ .bt-switch-in{flex-wrap:wrap} }
+/* 圖表滾輪縮放：點一下圖表才啟用（app.js 的 clickToZoom） */
+.zoom-on{outline:1px solid rgba(96,165,250,.55);outline-offset:-1px}
+.zoom-tip{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);white-space:nowrap;z-index:5;pointer-events:none;padding:4px 10px;border-radius:6px;background:rgba(11,14,20,.85);color:var(--muted);font-size:12px;opacity:0;transition:opacity .2s}
+.zoom-tip.on{opacity:1}
+/* 收起的圖表：標題列顯示最新數字；展開後改顯示圖例說明 */
+.fold>summary .fold-last{margin-left:auto;font-weight:400;font-size:12.5px;color:var(--text)}
+.fold:not([open])>summary .sub{display:none}
+.fold[open]>summary .fold-last{display:none}
+table.t.bt.jt tr.jhold td{color:var(--muted)}
