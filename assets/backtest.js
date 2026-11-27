@@ -267,6 +267,17 @@ window.MTXBacktest = (function(){
       streak: { K, gap, gaps },
       detect(ctx){ const d = pctDetect(ctx.mk, r => r.bp, 0.10); const kept = streaks(d.lit, gap).filter(w => w.n >= K).map(w => w.days[K - 1]);
         return { raw: kept.length, kept, removed: [], lit: d.lit }; } })),
+    // 2026-11-27 新增（研發處，籌碼指紋研究）：前兩個和 BP紅燈是同一種情況（大跌時賣權變貴），照 BP紅燈的模式算；
+    // 買權淨額是 BP紅燈的反向（外資淨買買權到極端），照 BC 系列的模式算（高檔觀測）。why：頁面開頭說明為什麼看這個值
+    { id: 'bpfear', name: 'BP恐慌溫度計', label: 'BP恐慌溫度計（每口權利金÷指數 前 2%）', desc: '外資 BP 每口平均權利金除以加權指數，達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 每口平均權利金 ÷ 加權指數', pct: 0.02, lab: true, turn: true,
+      why: '只看外資買的賣權每口有多貴（恐慌程度），不受外資部位大小和指數高低影響：BP 金額會隨指數變高而變大，這個比例不會。',
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bp != null && r.bpQty > 0 && r.idx > 0 ? r.bp / r.bpQty / r.idx : null, 0.02); } },
+    { id: 'sp2', name: 'SP 前 2%', label: 'SP 前 2%（外資 SP 金額）', desc: '外資 SP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 SP 金額', pct: 0.02, lab: true, turn: true,
+      why: '大跌時賣權變貴，外資賣出的賣權（SP）金額也跟著暴增，和 BP紅燈是同一種情況，但亮燈的日子不完全一樣。',
+      detect(ctx){ return pctDetect(ctx.mk, r => r.sp, 0.02); } },
+    { id: 'nc2', name: '買權淨額前 2%', label: '買權淨額前 2%（外資 BC−SC）', desc: '外資 BC 金額減 SC 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'high', col: '外資買權淨額（BC−SC）', pct: 0.02, lab: true,
+      why: 'BP紅燈的反向：外資「淨買賣權」（BP−SP）到極端之後大多上漲；這裡看外資「淨買買權」（BC−SC）到極端之後會不會偏弱。',
+      detect(ctx){ return pctDetect(ctx.mk, r => r.bc != null && r.sc != null ? r.bc - r.sc : null, 0.02); } },
     // 起跌點研究：研究頁（kind 'study'），訊號日同 BP紅燈，不跑一般的表格；內容由 run() 另外算（topStudy），BP過熱紫燈連續 3／5／10 天也用同一套算法
     { id: 'bpout', name: 'BP紅燈之後的起跌點', label: 'BP紅燈之後的起跌點（勝率穩定 100% 以後第一次跌 5%／10%）', desc: 'BP極端過熱紅燈與 BP過熱紫燈連續 3／5／10 天，在 BP紅燈勝率穩定 100% 那天以後，第一次從高點跌 5%／10% 在什麼時候；起跌點前 10 天的籌碼', kind: 'study', lab: true,
       detect(ctx){ return SIGNALS.find(s => s.id === 'bp').detect(ctx); } },
@@ -451,7 +462,37 @@ window.MTXBacktest = (function(){
     ['rtUp', '散戶看多（小+微）10 日增加', w => w.rtChg == null ? null : w.rtChg > 0],
     ['mxUp', '微台看多 10 日增加', w => w.mxChg == null ? null : w.mxChg > 0],
     ['mxPct', '微台多單持倉百分位 ≥ 99', w => w.mxPct == null ? null : w.mxPct >= 99],
+    // 2026-11-27 籌碼指紋研究的兩種起跌型態（看當天的一年排名，定義在 topTypes）
+    ['insure', '當天：保險退場型（SP÷BP 高、賣權淨額低、BP 每口權利金下降）', w => w.insure],
+    ['blowoff', '當天：噴出型（20 日大漲、爆量、融資與外資現貨大增）', w => w.blowoff],
   ];
+  /* 一年排名：和前 250 個交易日（不含當天）比，0＝一年最低、100＝一年最高；前面有效資料不到 120 天時為 null */
+  function yearRank(a){
+    return a.map((v, i) => { if(v == null || !isFinite(v)) return null; let lt = 0, eq = 0, n = 0;
+      for(let t = Math.max(0, i - 250); t < i; t++){ const x = a[t]; if(x == null || !isFinite(x)) continue; n++; if(x < v) lt++; else if(x === v) eq++; }
+      return n >= 120 ? (lt + eq / 2) / n * 100 : null; });
+  }
+  /* 兩種起跌型態（逐日，true／false；資料不足為 null）
+     保險退場型：外資 SP÷BP 的一年排名 ≥ 90、賣權淨額（BP−SP）≤ 25，而且 BP 每口權利金（÷指數）的排名在下降（前 1～3 天平均低於前 8～10 天）
+     噴出型：20 日漲幅 ≥ 80、成交金額（÷60 日均量）≥ 85、上市融資 5 日增減 ≥ 70、外資現貨 5 日合計 ≥ 70（融資讀信用交易試算表，2014 年起） */
+  function topTypes(mk){
+    if(mk._types) return mk._types;
+    const R = mk.rows, c = mk.c, ok = v => v != null && isFinite(v);
+    const avg = (a, i, x, y, need) => { let s = 0, m = 0; for(let t = i + x; t <= i + y; t++) if(t >= 0 && ok(a[t])){ s += a[t]; m++; } return m >= need ? s / m : null; };
+    const spbp = yearRank(R.map(r => r.bp > 0 && r.sp != null ? r.sp / r.bp : null));
+    const netPut = yearRank(R.map(r => r.bp != null && r.sp != null ? r.bp - r.sp : null));
+    const prem = yearRank(R.map(r => r.bp != null && r.bpQty > 0 && r.idx > 0 ? r.bp / r.bpQty / r.idx : null));
+    const vol = R.map(r => r.vol);
+    const volRel = yearRank(vol.map((v, i) => { if(!ok(v) || i < 59) return null; const m = avg(vol, i, -59, 0, 48); return m ? v / m : null; }));
+    const fs = R.map(r => r.fiSpot), spot5 = yearRank(fs.map((v, i) => { if(i < 4) return null; let s = 0, m = 0; for(let t = i - 4; t <= i; t++) if(ok(fs[t])){ s += fs[t]; m++; } return m >= 4 ? s : null; }));
+    const r20 = yearRank(c.map((v, i) => i >= 20 ? v / c[i - 20] - 1 : null));
+    const L = mk.loan, mg5 = L ? yearRank(L.map((v, i) => i >= 5 && ok(v) && ok(L[i - 5]) && L[i - 5] !== 0 ? v / L[i - 5] - 1 : null)) : null;
+    const insure = mk.d.map((_, i) => { const a = spbp[i], b = netPut[i], t1 = avg(prem, i, -3, -1, 2), t0 = avg(prem, i, -10, -8, 2);
+      return a == null || b == null || t1 == null || t0 == null ? null : a >= 90 && b <= 25 && t1 < t0; });
+    const blowoff = mk.d.map((_, i) => { const v = [r20[i], volRel[i], mg5 ? mg5[i] : null, spot5[i]];
+      return v.some(x => x == null) ? null : v[0] >= 80 && v[1] >= 85 && v[2] >= 70 && v[3] >= 70; });
+    return mk._types = { insure, blowoff };
+  }
   // 波段高點：從高點回落 X% 才確認；之後從低點反彈 X% 才開始找下一個高點
   function zigzagTops(mk, X, from){
     const s0 = mk.d.findIndex(d => d >= from), P = []; if(s0 < 0) return P;
@@ -464,7 +505,7 @@ window.MTXBacktest = (function(){
   }
   function topStudy(mk, idxs, S){
     const R = mk.rows, last = mk.n - 1;
-    const L = { bcy: new Set(pctDetect(mk, r => r.bc, 0.10).lit), sc10: new Set(pctDetect(mk, r => r.sc, 0.10).lit) };
+    const L = { bcy: new Set(pctDetect(mk, r => r.bc, 0.10).lit), sc10: new Set(pctDetect(mk, r => r.sc, 0.10).lit) }, TT = topTypes(mk);
     const firstOn = d => { let j = mk.lastOnOrBefore(d); if(j < 0 || mk.t[j] < d) j++; return j; };   // 日曆天 d 當天或之後的第一個交易日
     // 起跌點（或任一天）P 前 1～10 個交易日（P−10～P−1）；「10 日變化」＝P−1 收盤比 P−11 收盤
     const memo = new Map();
@@ -481,7 +522,7 @@ window.MTXBacktest = (function(){
           bcy: cnt(L.bcy), sc10: cnt(L.sc10), bcChg: ch('bc'), scChg: ch('sc'), bpChg: ch('bp'),
           upBP: ix.filter(t => up(t) && R[t].bp != null && R[t-1].bp != null && R[t].bp > R[t-1].bp).length,
           rtChg: ch('rtLong'), mxChg: R[p0].mxLong > 0 ? ch('mxLong') : null, mxPct: pc.length ? Math.max(...pc) : null,
-          ma60: isNaN(mk.ma[P]) ? null : mk.c[P] / mk.ma[P] - 1 }; }
+          ma60: isNaN(mk.ma[P]) ? null : mk.c[P] / mk.ma[P] - 1, insure: TT.insure[P], blowoff: TT.blowoff[P] }; }
       memo.set(P, w); return w; };
     // 每次 BP紅燈
     const sig = idxs.map(i => {
@@ -518,7 +559,8 @@ window.MTXBacktest = (function(){
       return [k, { yes: y.length, no: n.length, y5: p(y, 0.05), n5: p(n, 0.05), y10: p(y, 0.10), n10: p(n, 0.10) }]; }));
     const pred = { n: fwd.length, all: pcell(fwd), old: pcell(fwd.filter(i => mk.d[i] < thisYear)) };
     // 當出場訊號：第 S 天以後，第一次在 20 日新高日出現就賣
-    const rules = [['spot', '20 日新高，而且外資現貨 10 日合計賣超'], ['dayUpFiDown', '20 日新高，而且當天指數漲、外資期貨淨單減少']].map(([k, name]) => {
+    const rules = [['spot', '20 日新高，而且外資現貨 10 日合計賣超'], ['dayUpFiDown', '20 日新高，而且當天指數漲、外資期貨淨單減少'],
+      ['insure', '20 日新高，而且當天是保險退場型'], ['blowoff', '20 日新高，而且當天是噴出型']].filter(([k]) => k !== 'blowoff' || mk.loan).map(([k, name]) => {   // 融資讀不到時不列噴出型
       const f = TOP_CONDS.find(c => c[0] === k)[2];
       return { k, name, rows: sig.filter(s => s.done).map(s => { let hit = null;
         for(let t = firstOn(mk.t[s.i] + S); t < mk.n; t++){ const w = pre(t); if(w && is20hi(t) && f(w)){ hit = t; break; } }
@@ -531,10 +573,12 @@ window.MTXBacktest = (function(){
 
   /* ---------- 入口 ---------- */
   // data：MTXSheet.load() 的結果；end：只用這天以前的資料（驗算用，YYYY-MM-DD）
-  function run(data, end){
+  // margin：MTXSheet.loadMargin() 的結果（可省略）；只有研發處「噴出型」用到上市融資金額，讀不到時那個條件不列入
+  function run(data, end, margin){
     const rows = end ? data.rows.filter(r => r.date <= end) : data.rows;
     const bpSeries = (data.bpSeries || []).filter(s => !end || s.date <= end);
     const mk = Market(rows);
+    if(margin && margin.credit){ const L = new Map(margin.credit.map(c => [c.d, c.twse ? c.twse.loan : null])); mk.loan = mk.d.map(d => L.has(d) ? L.get(d) : null); }
     const base = baseline(mk);
     const ctx = { mk, bpSeries };
     const signals = SIGNALS.map(sig => {
@@ -560,7 +604,7 @@ window.MTXBacktest = (function(){
       // 研發處「BP過熱紫燈連續 5 天」：中斷容許 0／3／5 天、從首日或第 5 個亮燈日進場的比較
       const streak = sig.streak ? streakStudy(mk, det.lit, sig.streak.K, sig.streak.gap, sig.streak.gaps, base, S) : null;
       return { id: sig.id, name: sig.name, label: sig.label, desc: sig.desc || '', raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept,
-        holds, regimeHolds, turn, paths, exits, flatCmp, hw, streak, lab: sig.lab, kind: sig.kind, col: sig.col, pct: sig.pct, ...res };
+        holds, regimeHolds, turn, paths, exits, flatCmp, hw, streak, lab: sig.lab, why: sig.why, kind: sig.kind, col: sig.col, pct: sig.pct, ...res };
     });
     // 研發處「起跌點」：BP紅燈與 BP過熱紫燈連續 3／5／10 天，一律從 BP紅燈「第一次穩定 100%」那天（第 S 天）起算（把連續紫燈當成 BP紅燈的概念；資料太少、算不出 S 時不算）
     const red = signals.find(s => s.id === 'bp'), S0 = red && red.turn && red.turn.stable;

@@ -894,14 +894,15 @@ function evChart(el,rows,color){
   if(window.ResizeObserver){ let w=el.clientWidth; new ResizeObserver(()=>{ if(el.clientWidth!==w){ w=el.clientWidth; draw(); } }).observe(el); }
 }
 
-const SIG_COLOR = {strong:'#EF4444', bp:'#A855F7', bpv:'#C084FC', bpx:'#E879F9', bcy:'#F59E0B', bcg:'#10B981', bcx:'#D946EF', bpv3:'#99F6E4', bpv5:'#2DD4BF', bpv10:'#0D9488', bpout:'#38BDF8'};
+const SIG_COLOR = {strong:'#EF4444', bp:'#A855F7', bpv:'#C084FC', bpx:'#E879F9', bcy:'#F59E0B', bcg:'#10B981', bcx:'#D946EF', bpv3:'#99F6E4', bpv5:'#2DD4BF', bpv10:'#0D9488', bpfear:'#F472B6', sp2:'#818CF8', nc2:'#A3E635', bpout:'#38BDF8'};
 const TOP_MARK = '#FB923C';   // 研發處「BP紅燈之後的起跌點」：歷史走勢圖上的起跌點箭頭
 function renderSignals(){
   nav('signals');
   const main=$('#main'), B=window.MTXBacktest;
   const end=(new URLSearchParams(location.search).get('end')||'').match(/^\d{4}-\d{2}-\d{2}$/)?new URLSearchParams(location.search).get('end'):null;
-  window.MTXSheet.load().then(data=>{
-    const res=B.run(data,end), mk=res.mk, LAST=mk.n-1;
+  // 信用交易試算表只有研發處「噴出型」用到（上市融資金額）；讀不到也照常顯示，那個條件不列入
+  Promise.all([window.MTXSheet.load(), loadMargin().catch(()=>null)]).then(([data,M])=>{
+    const res=B.run(data,end,M), mk=res.mk, LAST=mk.n-1;
     window.__bt=res;   // 方便在主控台驗算
     const dt=s=>s.replace(/-/g,'/');
     const warn=(data.warnings||[]).slice(0,8);
@@ -910,7 +911,7 @@ function renderSignals(){
       ['BP過熱',['bpv','bp','bpx'],'外資 BP 進入高水位，大跌時的極端行情：BP過熱紫燈（前 10%）、BP極端過熱紅燈（前 2%）、BP紫爆（與結算比前 1%）'],
       ['BC過熱',['bcy','bcg','bcx'],'外資 BC 進入高水位，大盤在高檔或暴漲時：BC過熱黃燈（前 10%）、BC極端過熱綠燈（前 1%）、BC紫爆（與結算比前 1%）'],
       // 研發處（名稱暫定）：研究中、結論還沒定案的題目
-      ['研發處',['bpv3','bpv5','bpv10','bpout'],'研究中的題目，結論還沒定案、樣本少，只當觀察：BP過熱紫燈連續 3／5／10 天（把連續紫燈當成 BP紅燈的概念）、BP紅燈之後的起跌點']]
+      ['研發處',['bpv3','bpv5','bpv10','bpfear','sp2','nc2','bpout'],'研究中的題目，結論還沒定案、樣本少，只當觀察：BP過熱紫燈連續 3／5／10 天（把連續紫燈當成 BP紅燈的概念）、BP恐慌溫度計與 SP 前 2%（和 BP紅燈同一種情況）、買權淨額前 2%（BP紅燈的反向）、BP紅燈之後的起跌點']]
       .map(([n,ids,d])=>[n,ids.filter(id=>res.signals.some(s=>s.id===id)),d]).filter(g=>g[1].length);
 
     const lead=s=>{
@@ -926,13 +927,14 @@ function renderSignals(){
       // 研發處「BP過熱紫燈連續 5 天」：訊號日是第 5 個亮燈日，不是亮燈首日
       const K=s.streak&&s.streak.K, gp=K?s.streak.gap:0;
       const def=K?`<b>研發處的題目，結論還沒定案。</b>BP過熱紫燈（外資 BP 金額達到當天以前所有資料的前 10%，逐日判斷）<b>連續亮到第 ${K} 個亮燈日</b>的那天收盤進場：那天就知道已經亮滿 ${K} 天，可以實際照做。${gp?`中間沒亮 ${gp} 個交易日以內（例如結算或大盤上漲中斷一兩天）仍算同一段，超過才重新算`:'中間只要有一天沒亮就重新算'}，一段只算一次，從 2012 年起判斷；下面各表的「首日」都是第 ${K} 個亮燈日。`
-        :`逐日動態判斷：當天的${s.col||'外資 BP 金額'}達到「當天以前所有資料」的前 ${Math.round((s.pct||0.02)*100)}% 才算亮燈，連續亮燈只取第一天，熄燈滿 10 個交易日才算新的一次，從 2012 年起判斷。`;
+        :`${s.lab?`<b>研發處的題目，結論還沒定案。</b>${s.why||''}`:''}逐日動態判斷：當天的${s.col||'外資 BP 金額'}達到「當天以前所有資料」的前 ${Math.round((s.pct||0.02)*100)}% 才算亮燈，連續亮燈只取第一天，熄燈滿 10 個交易日才算新的一次，從 2012 年起判斷。`;
+      const hiName=s.id.startsWith('bc')?'BC 燈號':s.name+' ';   // 研發處的買權淨額也用 BC 系列的高檔觀測（名稱以 % 結尾，後面空一格）
       return `${def}
         共 ${bv(s.count)} 次${s.count<12?'，樣本少，屬於個案觀察':''}。${s.id==='bp'?'每次都在急跌中亮燈：':''}${K?'進場':'亮燈'}前 30 天內，從${hiK?'低點漲了':'高點跌了'} ${bv(Math.min(...moves),'pct0')}～${bv(Math.max(...moves),'pct0')}。
         ${latest?`最新一次是 <b class="num">${dt(latest['首日日期'])}</b>${newest<30?`，距資料最後一天只有 ${newest} 天，多數欄位還是「未達成」`:''}。`:''}
         首日收盤進場持有 30 天，勝率 ${bv(ex('30天')['訊號勝率'],'pct0')}（基準 ${bv(ex('30天')['基準勝率'],'pct0')}），期望值 ${bv(ex('30天')['訊號期望值'],'pct')}（基準 ${bv(ex('30天')['基準期望值'],'pct')}）；
         持有 60 天，勝率 ${bv(ex('60天')['訊號勝率'],'pct0')}，期望值 ${bv(ex('60天')['訊號期望值'],'pct')}（基準 ${bv(ex('60天')['基準期望值'],'pct')}）${h120}。
-        ${hiK?'<br>BC 燈號是<b>高檔</b>的標記：下面各表的「勝率」是之後<b>上漲</b>的比例，下跌機率＝100%−勝率；要看亮燈之後會不會跌，請看「高檔觀測」。':''}`;
+        ${hiK?`<br>${hiName}是<b>高檔</b>的標記：下面各表的「勝率」是之後<b>上漲</b>的比例，下跌機率＝100%−勝率；要看亮燈之後會不會跌，請看「高檔觀測」。`:''}`;
     };
     const robust=s=>{
       if(s.id!=='strong') return '';
@@ -1183,8 +1185,10 @@ function renderSignals(){
       const pc0=v=>`<b class="num">${v.toFixed(0)}%</b>`;
       const f30=first.h[30], gap30=f30.avg-B.h[30].avg;
       const cand=H.rows.filter(r=>r.key!=='every'&&r.h[14].n>=8&&r.h[14].down-B.h[14].down>=15).sort((a,b)=>b.h[14].down-a.h[14].down)[0];
+      // 研發處的訊號另外看 120 天：首日之後 120 天的下跌機率比基準高 15 個百分點以上時，加一句長天期的結論
+      const f120=first.h[120], longWeak=s.lab&&f120&&f120.n>0&&f120.down-B.h[120].down>=15;
       // 首日本身的下跌機率明顯偏高時，不下「不是賣出訊號」的結論，避免前後兩句矛盾
-      const notSell=cand&&cand===first?'':'，亮燈本身不是賣出訊號';
+      const notSell=(cand&&cand===first)||longWeak?'':'，亮燈本身不是賣出訊號';
       const avgTxt=!f30.n?'':`首日之後 30 天平均 ${bv(f30.avg,'pct')}（基準 ${bv(B.h[30].avg,'pct')}），`+
         (gap30>=1?`<b>比基準好${notSell}</b>`:gap30>-1?`<b>和基準差不多（差距不到 1 個百分點）${notSell}</b>`:`比基準低 ${Math.abs(gap30).toFixed(2)} 個百分點`)+few(f30.n)+'。';
       const candTxt=cand?`14 天後下跌機率明顯比基準高的是「${cand.name}」：${pc0(cand.h[14].down)}，基準 ${pc0(B.h[14].down)}（${cand.h[14].n} 次${cand.h[14].n<12?'，次數少，僅供參考':''}）。`
@@ -1198,8 +1202,8 @@ function renderSignals(){
           <div><span>最後一天的值</span><b class="num">${H.lastVal==null?"—":fmt(H.lastVal/1e5,1)+" 億"}</b><em>${s.col}</em></div>
           <div><span>亮燈門檻（當天）</span><b class="num">${H.lastThr==null?"—":fmt(H.lastThr/1e5,1)+" 億"}</b><em>門檻逐日變動，不寫死</em></div>
         </div></div>
-        <p class="bt-lead">BC 燈號亮的時候，大盤常常還在漲（緩漲急跌、長期多頭），所以除了「首日」，也比較了幾種不同的起點。
-          ${avgTxt}${candTxt}</p>
+        <p class="bt-lead">${s.id.startsWith('bc')?'BC 燈號':s.name+' '}亮的時候，大盤常常還在漲（緩漲急跌、長期多頭），所以除了「首日」，也比較了幾種不同的起點。
+          ${avgTxt}${candTxt}${longWeak?`但拉長到 120 天，首日之後的下跌機率是 ${pc0(f120.down)}（基準 ${pc0(B.h[120].down)}），平均 ${bv(f120.avg,'pct')}（基準 ${bv(B.h[120].avg,'pct')}），<b>長天期明顯偏弱</b>${few(f120.n)}。`:''}</p>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="tx">從哪一天開始算</th><th class="r">次數</th>${HS.map(N=>`<th class="r">${N} 天後</th>`).join('')}<th class="r">120 天內曾跌<br>10% 以上</th></tr></thead><tbody>
           ${main.map(o=>row(o)).join('')}${row(B,'base grp')}${ext.map((o,k)=>row(o,k?'':'grp')).join('')}
         </tbody></table></div>
@@ -1331,9 +1335,10 @@ function renderSignals(){
       // 表二：起跌點前 1～10 個交易日
       const num0=v=>v==null?'—':`<span class="${cls(v)}">${sign(v)}${Math.round(v).toLocaleString()}</span>`;
       const days=v=>v?`<b>${v} 天</b>`:'<span class="dim">0</span>';
+      const yn=v=>v==null?'—':v?'<b>是</b>':'<span class="dim">否</span>';
       const t2=st.tops.map(t=>{ const w=t.w; if(!w) return '';
         return `<tr><td class="r"><b>${dt(mk.d[t.P])}</b><br><span class="bt-gap">${t.X.map(x=>x*100+'%').join('／')}・${nm} ${t.from.map(d=>dt(d).slice(0,7)).join('、')}</span></td>
-          <td class="r">${pcG(w.idx10)}</td><td class="r">${w.dayUpFiDown?`<b>是</b>（${num0(w.dayFi)}）`:`<span class="dim">否</span>（${num0(w.dayFi)}）`}</td>
+          <td class="r">${yn(w.insure)}</td><td class="r">${yn(w.blowoff)}</td><td class="r">${pcG(w.idx10)}</td><td class="r">${w.dayUpFiDown?`<b>是</b>（${num0(w.dayFi)}）`:`<span class="dim">否</span>（${num0(w.dayFi)}）`}</td>
           <td class="r">${num0(w.fiChg)}</td><td class="r">${w.upFiDown} 天</td><td class="r">${num0(w.spot)}</td>
           <td class="r">${days(w.bcy)}</td><td class="r">${days(w.sc10)}</td><td class="r">${pcG(w.bcChg)}</td><td class="r">${pcG(w.scChg)}</td>
           <td class="r">${pcG(w.bpChg)}</td><td class="r">${w.upBP} 天</td><td class="r">${pcG(w.rtChg)}</td><td class="r">${pcG(w.mxChg)}</td>
@@ -1367,12 +1372,13 @@ function renderSignals(){
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">${nm}</th><th class="r">首日收盤</th><th class="r">第 ${S} 天報酬</th><th class="r">第 ${S} 天以前<br>最大回檔</th>
           <th class="r">5%：起跌點</th><th class="r">跌滿 5%</th><th class="r">10%：起跌點</th><th class="r">跌滿 10%</th></tr></thead><tbody>${t1}</tbody></table></div>
         <h2 class="bt-h2" id="${s.id}-pre">表二　起跌點前 1～10 個交易日</h2>
-        <p class="bt-note">10 日變化＝起跌點前一天收盤比前 11 天收盤。外資期貨＝外資(大小台)期貨總未平倉（淨單，口），減少＝加空或減多；外資現貨單位億元。「漲、BP 增加」＝指數上漲、BP 金額也比前一天多的天數（BP 逆勢增加）。散戶看多（小+微）2024 年 7 月以前只有小台；微台 2024/07/29 才有資料。</p>
-        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">起跌點</th><th class="r">10 日漲幅</th><th class="r">當天：漲、外資<br>期貨淨單減少</th><th class="r">外資期貨<br>10 日(口)</th><th class="r">漲、外資期貨<br>減少(天)</th><th class="r">外資現貨<br>10 日(億)</th>
+        <p class="bt-note">10 日變化＝起跌點前一天收盤比前 11 天收盤。外資期貨＝外資(大小台)期貨總未平倉（淨單，口），減少＝加空或減多；外資現貨單位億元。「漲、BP 增加」＝指數上漲、BP 金額也比前一天多的天數（BP 逆勢增加）。散戶看多（小+微）2024 年 7 月以前只有小台；微台 2024/07/29 才有資料。保險退場型、噴出型看起跌點當天，定義見表三下方。</p>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">起跌點</th><th class="r">保險退場型<br>（當天）</th><th class="r">噴出型<br>（當天）</th><th class="r">10 日漲幅</th><th class="r">當天：漲、外資<br>期貨淨單減少</th><th class="r">外資期貨<br>10 日(口)</th><th class="r">漲、外資期貨<br>減少(天)</th><th class="r">外資現貨<br>10 日(億)</th>
           <th class="r">BC過熱黃燈</th><th class="r">SC 前 10%</th><th class="r">BC 10 日</th><th class="r">SC 10 日</th><th class="r">BP 10 日</th><th class="r">漲、BP 增加</th><th class="r">散戶看多<br>小+微 10 日</th><th class="r">微台看多<br>10 日</th><th class="r">微台持倉<br>百分位(最高)</th><th class="r">季線乖離</th></tr></thead><tbody>${t2}</tbody></table></div>
         <h2 class="bt-h2" id="${s.id}-cmp">表三　這些徵兆常見嗎？和其他高點、一般新高日比</h2>
-        <p class="bt-note">每格是符合的比例（符合 / 有資料的次數）。波段高點＝之後收盤跌 10% 以上、再反彈 10% 才找下一個高點（2012 年起，共 ${st.n.z10} 個）；一般的 20 日新高日＝收盤是近 20 個交易日最高、之後 20 個交易日內沒有跌 5% 的日子（共 ${st.n.ctrl} 天）。前兩列看當天，其他看前 1～10 個交易日。<span class="bt-top-lg">底色</span>＝比一般新高日高 15 個百分點以上。</p>
+        <p class="bt-note">每格是符合的比例（符合 / 有資料的次數）。波段高點＝之後收盤跌 10% 以上、再反彈 10% 才找下一個高點（2012 年起，共 ${st.n.z10} 個）；一般的 20 日新高日＝收盤是近 20 個交易日最高、之後 20 個交易日內沒有跌 5% 的日子（共 ${st.n.ctrl} 天）。前兩列和最後兩列看當天，其他看前 1～10 個交易日。<span class="bt-top-lg">底色</span>＝比一般新高日高 15 個百分點以上。</p>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="tx">徵兆</th>${G3.map(([g,n])=>`<th class="r">${n}<br><span class="bt-gap">${st.n[g]} ${g==='ctrl'?'天':'個'}</span></th>`).join('')}</tr></thead><tbody>${t3}</tbody></table></div>
+        <p class="bt-note">最後兩列是 2026/11 籌碼指紋研究找到的兩種起跌型態（用「一年排名」：和前 250 個交易日比，0＝一年最低、100＝一年最高）。<b>保險退場型</b>：外資 SP÷BP ≥ 90、賣權淨額（BP−SP）≤ 25，而且 BP 每口權利金（÷指數）的排名在下降（前 1～3 天平均低於前 8～10 天）——外資不再買保險、反而在賣。<b>噴出型</b>：20 日漲幅 ≥ 80、成交金額（÷60 日均量）≥ 85、上市融資 5 日增減 ≥ 70、外資現貨 5 日合計 ≥ 70。融資讀信用交易試算表（2014 年起），之前的日子不列入噴出型。</p>
         <div class="card bt-pc bt-after"><ul>
           <li><b>${nm}之後的起跌點</b>：比一般新高日明顯常見的是${hp.length?hp.join('、'):'（沒有）'}；明顯比較少的是${lp.length?lp.join('、'):'（沒有）'}。</li>
           <li><b>2012 年以來跌 10% 以上的波段高點</b>：比一般新高日明顯常見的是${hz.length?hz.join('、'):'（沒有）'}。</li>
@@ -1468,7 +1474,7 @@ function renderSignals(){
         <span class="bt-switch-sub" id="btSwSub"></span></div></div>
       ${res.signals.map(section).join('')}
       <details class="card bt-details" id="definitions"><summary>定義與計算方式</summary><ul>
-        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、「強烈落底」欄（BE 欄，值為 O）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC、SC、BP 金額。網頁開啟時即時讀取並計算。</li>
+        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、「強烈落底」欄（BE 欄，值為 O）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC、SC、BP、SP 金額與 BP 口數；研發處「噴出型」另外讀信用交易試算表的上市融資金額。網頁開啟時即時讀取並計算。</li>
         <li><b>持有週期</b>：7／14／30／60／90 個日曆天（BP極端過熱紅燈另外加上「第一次穩定達到 100%」那天與 120 天，這個天數會隨新資料浮動；BP過熱紫燈、BP紫爆與 BC 系列加上 120 天），出場價取到期日當天或之前最後一個交易日的收盤。資料不足一個完整週期的事件列為「未完成」，不計入統計。</li>
         <li><b>燈號（逐日判斷）</b>：當天的值 ≥ 當天以前（含當天）所有資料由大到小第 k 大的值，k＝資料天數×門檻百分比，無條件捨去、至少 1。只用當天以前的資料，所以不會因為後來的資料而改變（試算表的條件格式是拿整欄比較、包含之後的資料，舊日期的顏色會和這裡不同）。2012 年起判斷；連續亮燈只取第一天，距離上一個亮燈日滿 10 個交易日才算新的一次。
           <ul>
@@ -1479,7 +1485,9 @@ function renderSignals(){
         <li><b>研發處</b>（研究中、結論還沒定案）：
           <ul>
             <li><b>BP過熱紫燈連續 3／5／10 天</b>（把連續紫燈當成 BP紅燈的概念）：BP過熱紫燈連續亮燈（3 天：中間沒亮 1 個交易日以內仍算同一段；5、10 天：3 個交易日以內）亮到第 N 個亮燈日那天＝訊號日，一段只算一次；持有週期、「第一次穩定達到 100%」、走勢與出場方式比較的算法同 BP極端過熱紅燈。「研究」一段另外比較嚴格連續（中間沒亮 0 天）與中間沒亮 5 個交易日以內的算法，以及從一段的首日進場（要事後才知道會亮滿 N 天，只能參考），並列出每一段和 BP紅燈重疊多少。</li>
-            <li><b>BP紅燈之後的起跌點</b>（起算訊號可切換：BP紅燈或 BP過熱紫燈連續 3／5／10 天，一律用 BP紅燈的第 S 天）：從起算訊號首日起追蹤最高收盤，「第一次穩定達到 100%」那天（第 S 天）以後，第一次收盤比最高收盤低 5%／10%，那個最高收盤的日子＝起跌點。前 1～10 個交易日＝起跌點前 10 個交易日；10 日變化＝前一天收盤比前 11 天收盤。外資期貨淨單＝工作表1 外資(大小台)期貨未平倉；外資現貨＝外資現貨買賣超（億元）；SC 前 10%＝Sheet1 外資 SC 金額逐日前 10%；微台看多＝AO 欄、微台持倉百分位＝「多單持倉占比百分位」（2024/07/29 起）；散戶看多（小+微）＝AS 欄。波段高點：收盤從高點回落 10% 才確認，之後從低點反彈 10% 才開始找下一個高點。</li>
+            <li><b>BP恐慌溫度計</b>：外資 BP 金額 ÷ BP 口數（Sheet1 外資BP口數）＝每口平均權利金，再除以加權指數；<b>SP 前 2%</b>：外資 SP 金額；兩者都是當天以前所有資料的前 2%，判斷方式、持有週期、「第一次穩定達到 100%」、走勢與出場方式比較同 BP極端過熱紅燈。</li>
+            <li><b>買權淨額前 2%</b>：外資 BC 金額 − SC 金額（Sheet1），當天以前所有資料的前 2%；判斷方式與「高檔觀測」同 BC 系列。</li>
+            <li><b>BP紅燈之後的起跌點</b>（起算訊號可切換：BP紅燈或 BP過熱紫燈連續 3／5／10 天，一律用 BP紅燈的第 S 天）：從起算訊號首日起追蹤最高收盤，「第一次穩定達到 100%」那天（第 S 天）以後，第一次收盤比最高收盤低 5%／10%，那個最高收盤的日子＝起跌點。前 1～10 個交易日＝起跌點前 10 個交易日；10 日變化＝前一天收盤比前 11 天收盤。外資期貨淨單＝工作表1 外資(大小台)期貨未平倉；外資現貨＝外資現貨買賣超（億元）；SC 前 10%＝Sheet1 外資 SC 金額逐日前 10%；微台看多＝AO 欄、微台持倉百分位＝「多單持倉占比百分位」（2024/07/29 起）；散戶看多（小+微）＝AS 欄。波段高點：收盤從高點回落 10% 才確認，之後從低點反彈 10% 才開始找下一個高點。兩種起跌型態（保險退場型、噴出型）的定義見該頁表三下方；一年排名＝和前 250 個交易日（不含當天）比，前面有效資料不到 120 天時不算；成交金額＝工作表1「加權指數成交量(億)」欄，上市融資＝信用交易試算表。</li>
           </ul></li>
         <li><b>價格</b>：加權指數收盤價；沒有盤中高低。</li>
         <li><b>天數</b>：所有「費時」「到達天數」「持有週期」都是日曆天（兩個日期相減）。</li>
