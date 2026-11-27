@@ -458,7 +458,7 @@ function streakStats(dates,vals){
 
 const loadMargin = () => window.MTXSheet ? MTXSheet.loadMargin() : Promise.reject(new Error('sheet.js 未載入'));
 // 顯示在每日籌碼頁；回傳 setRange(from,to)，讓信用交易每日明細跟著頁面的日期區間
-function renderCredit(M,body,noteEl){
+function renderCredit(M,body,noteEl,idxOf){   // idxOf：日期→加權收盤列（idx、chg），明細「加權」欄用
   {
     const R=M.ratio||[], C=M.credit||[], E=M.etfs||{};
     const codes=Object.keys(E);
@@ -499,7 +499,7 @@ function renderCredit(M,body,noteEl){
     /* ---- 歷史統計 ---- */
     const dates=col(c=>c.d);
     const statRows=[['上市融資（億）',col(c=>c.twse?c.twse.loanChg:null),2],['上櫃融資（億）',col(c=>c.tpex?c.tpex.loanChg:null),2],
-      ...codes.map(code=>[`${code} 融資（張）`,etfSeries(code),0])];
+      ...codes.map(code=>[`${brand(code)} 融資（張）`,etfSeries(code),0])];
     const sumN=(v,n)=>v.slice(-n).reduce((s,x)=>s+(x||0),0);
     const rng=s=>s.n?`<b class="num">${s.n}</b> 天<em>${s.start.replace(/-/g,"/")}–${s.start.slice(0,4)===s.end.slice(0,4)?md(s.end):s.end.replace(/-/g,"/")}</em>`:'—';
     const statTable = `
@@ -513,15 +513,15 @@ function renderCredit(M,body,noteEl){
     const cell=(v,d)=>`<td class="r num ${cls(v)}">${sgnN(v==null?null:+v.toFixed(d),d)}</td>`;
     const detail = `
       <details class="tbl cr-detail" id="crDetail"><summary class="tbl-h" id="crDetailH">信用交易每日明細</summary><div class="tscroll tall noterm"><table class="t cr-t">
-        <thead><tr><th>日期</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${brand(code)} 資(張)</th><th class="r">融資連續</th>`).join('')}${codes.map(code=>`<th class="r">${brand(code)} 券(張)</th>`).join('')}</tr></thead>
+        <thead><tr><th>日期</th><th class="r">加權</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${brand(code)} 資(張)</th><th class="r">融資連續</th>`).join('')}${codes.map(code=>`<th class="r">${brand(code)} 券(張)</th>`).join('')}</tr></thead>
         <tbody id="crRows"></tbody>
-      </table></div></details>`;
+      </table></div><div class="tbl-n">加權＝加權指數收盤，紅字＝當天收漲、綠字＝收跌。</div></details>`;
     const MAXROWS=400;
     const setRange=(from,to)=>{
       const rows=C.map((c,i)=>({c,i})).filter(({c})=>c.d>=from&&c.d<=to).reverse();
       const yr=from.slice(0,4)!==to.slice(0,4), dd=d=>yr?d.replace(/-/g,'/'):md(d);
       const tb=$('#crRows'), hd=$('#crDetailH'); if(!tb) return;
-      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>`; }).join('')}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return cell(e&&e.shortChg,0); }).join('')}</tr>`).join('');
+      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${(x=>x&&x.idx!=null?`<td class="r num ${cls(x.chg)}">${n2(x.idx)}</td>`:'<td class="r">—</td>')(idxOf&&idxOf.get(c.d))}${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>`; }).join('')}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return cell(e&&e.shortChg,0); }).join('')}</tr>`).join('');
       hd.textContent=`信用交易每日明細（${from.replace(/-/g,'/')} – ${to.replace(/-/g,'/')}・${rows.length} 個交易日${rows.length>MAXROWS?`，顯示最近 ${MAXROWS} 天`:''}）`;
     };
 
@@ -755,7 +755,7 @@ function renderChips(){
       cols=a==='all'?COLS.map(c=>c[0]):colsDefault(); colsSave(cols); syncChecks(); drawTable(); });
     syncChecks();
 
-    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote')) : null;
+    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote'),new Map(R.map(r=>[r.date,r]))) : null;
     const charts=[], legends=[]; let sync=null;
     const clamp=d=>d<first?first:d>last?last:d;
     // 日期區間：按鈕、起訖日期，或直接在任一張圖上（點一下後）滾輪縮放、拖曳，都會同步到所有圖、明細表、信用交易明細
