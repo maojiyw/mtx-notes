@@ -224,10 +224,10 @@ window.MTXBacktest = (function(){
     return { raw: kept.length, kept, removed: [], lit, lastVal, lastThr };   // lastVal／lastThr：最後一天的值與門檻
   }
   /* ---------- 訊號定義（可擴充） ---------- */
-  const flagO = v => v != null && String(v).trim().toUpperCase() === 'O';
   const SIGNALS = [
-    { id: 'strong', name: '強烈落底', label: '強烈落底（BE欄）', desc: '每日籌碼試算表「強烈落底」欄（BE 欄）標記 O 的交易日', kind: 'low',
-      detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if(flagO(r.sigStrong)) raw.push(i); });
+    { id: 'strong', name: '強烈落底', label: '強烈落底', desc: '收跌日，落底訊號任一組 4 項全部滿足（每日籌碼頁同一套規則，網站自算）', kind: 'low',
+      // 2026-11-26 起改用網站自算（sheet.js 的 dropSignals），不再讀試算表 BE 欄；2011 年以來逐日與 BE 欄一致
+      detect(ctx){ const raw = []; ctx.mk.rows.forEach((r, i) => { if((r.g1 && r.g1.n === 4) || (r.g2 && r.g2.n === 4)) raw.push(i); });
         const kept = dedupe(raw, COOLDOWN);
         return { raw: raw.length, kept, removed: raw.filter(i => !kept.includes(i)).map(i => ctx.mk.d[i]).sort().reverse() }; } },
     { id: 'bp', name: 'BP極端過熱紅燈', label: 'BP極端過熱紅燈（前 2%）', desc: '外資 BP 金額達到當天以前所有資料的前 2%，逐日判斷', kind: 'low', col: '外資 BP 金額（Sheet1）', pct: 0.02,
