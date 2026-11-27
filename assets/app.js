@@ -212,7 +212,7 @@ function dailyCard(el){
       <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）</div>
       <div class="hero-price"><span class="px num ${cls(L.chg)}">${n2(L.idx)}</span><span class="ch num ${cls(L.chg)}">${sign(L.chg)}${n2(L.chg)}（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</span><span class="badge">加權指數收盤</span></div>
       <div class="dgrid">
-        ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
+        ${cell('外資期貨（相對結算）',n0(L.fiRel)+' 口','較前日 '+(L.fiDelta==null?'—':sign(L.fiDelta)+fmt(L.fiDelta,0)),cls(L.fiRel))}
         ${cell('外資現貨',sign(L.fiSpot)+n2(L.fiSpot)+' 億','',cls(L.fiSpot))}
         ${cell('外資 BP 金額',n0(L.bp),'BC '+n0(L.bc)+'・SC '+n0(L.sc))}
         ${cell('微台多單／空單',n0(L.mxLong)+'／'+n0(L.mxShort),'多單較前日 '+(P.mxLong==null||L.mxLong==null?'—':sign(L.mxLong-P.mxLong)+fmt(L.mxLong-P.mxLong,0)))}
@@ -458,10 +458,11 @@ function streakStats(dates,vals){
 
 const loadMargin = () => window.MTXSheet ? MTXSheet.loadMargin() : Promise.reject(new Error('sheet.js 未載入'));
 // 顯示在每日籌碼頁；回傳 setRange(from,to)，讓信用交易每日明細跟著頁面的日期區間
-function renderCredit(M,body,noteEl){
+function renderCredit(M,body,noteEl,idxOf){   // idxOf：日期→加權收盤列（idx、chg），明細「加權」欄用
   {
     const R=M.ratio||[], C=M.credit||[], E=M.etfs||{};
     const codes=Object.keys(E);
+    const brand=code=>({'00685L':'群益','00631L':'元大'}[code]||'')+code; // 明細表頭加發行商
     if(noteEl) noteEl.textContent=`資料至 ${M.updated||'—'}・每個交易日晚上 21:30 起自動更新（維持率人工填）`;
 
     /* ---- 維持率 ---- */
@@ -498,7 +499,7 @@ function renderCredit(M,body,noteEl){
     /* ---- 歷史統計 ---- */
     const dates=col(c=>c.d);
     const statRows=[['上市融資（億）',col(c=>c.twse?c.twse.loanChg:null),2],['上櫃融資（億）',col(c=>c.tpex?c.tpex.loanChg:null),2],
-      ...codes.map(code=>[`${code} 融資（張）`,etfSeries(code),0])];
+      ...codes.map(code=>[`${brand(code)} 融資（張）`,etfSeries(code),0])];
     const sumN=(v,n)=>v.slice(-n).reduce((s,x)=>s+(x||0),0);
     const rng=s=>s.n?`<b class="num">${s.n}</b> 天<em>${s.start.replace(/-/g,"/")}–${s.start.slice(0,4)===s.end.slice(0,4)?md(s.end):s.end.replace(/-/g,"/")}</em>`:'—';
     const statTable = `
@@ -512,15 +513,15 @@ function renderCredit(M,body,noteEl){
     const cell=(v,d)=>`<td class="r num ${cls(v)}">${sgnN(v==null?null:+v.toFixed(d),d)}</td>`;
     const detail = `
       <details class="tbl cr-detail" id="crDetail"><summary class="tbl-h" id="crDetailH">信用交易每日明細</summary><div class="tscroll tall noterm"><table class="t cr-t">
-        <thead><tr><th>日期</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${code} 資(張)</th><th class="r">融資連續</th><th class="r">${code} 券(張)</th>`).join('')}</tr></thead>
+        <thead><tr><th>日期</th><th class="r">加權</th><th class="r">上市資(億)</th><th class="r">上市券(張)</th><th class="r">上櫃資(億)</th><th class="r">上櫃券(張)</th>${codes.map(code=>`<th class="r">${brand(code)} 資(張)</th><th class="r">融資連續</th>`).join('')}${codes.map(code=>`<th class="r">${brand(code)} 券(張)</th>`).join('')}</tr></thead>
         <tbody id="crRows"></tbody>
-      </table></div></details>`;
+      </table></div><div class="tbl-n">加權＝加權指數收盤，紅字＝當天收漲、綠字＝收跌。</div></details>`;
     const MAXROWS=400;
     const setRange=(from,to)=>{
       const rows=C.map((c,i)=>({c,i})).filter(({c})=>c.d>=from&&c.d<=to).reverse();
       const yr=from.slice(0,4)!==to.slice(0,4), dd=d=>yr?d.replace(/-/g,'/'):md(d);
       const tb=$('#crRows'), hd=$('#crDetailH'); if(!tb) return;
-      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>${cell(e&&e.shortChg,0)}`; }).join('')}</tr>`).join('');
+      tb.innerHTML=rows.slice(0,MAXROWS).map(({c,i})=>`<tr><td class="num">${dd(c.d)}</td>${(x=>x&&x.idx!=null?`<td class="r num ${cls(x.chg)}">${n2(x.idx)}</td>`:'<td class="r">—</td>')(idxOf&&idxOf.get(c.d))}${cell(c.twse&&c.twse.loanChg,2)}${cell(c.twse&&c.twse.shortChg,0)}${cell(c.tpex&&c.tpex.loanChg,2)}${cell(c.tpex&&c.tpex.shortChg,0)}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return `${cell(e&&e.loanChg,0)}<td class="r">${streakTxt(etfSt[code][i])}</td>`; }).join('')}${codes.map(code=>{ const e=c.etf&&c.etf[code]; return cell(e&&e.shortChg,0); }).join('')}</tr>`).join('');
       hd.textContent=`信用交易每日明細（${from.replace(/-/g,'/')} – ${to.replace(/-/g,'/')}・${rows.length} 個交易日${rows.length>MAXROWS?`，顯示最近 ${MAXROWS} 天`:''}）`;
     };
 
@@ -570,8 +571,8 @@ function renderReview(id){
       <div class="pills">${r.pills.map(([c,t])=>`<span class="pill ${c}">${t}</span>`).join('')}</div>
       <div class="r-ohlc num">
         <div><span>收盤</span><b class="${cls(r.chg)}">${fmt(r.close)}</b></div>
-        <div><span>漲跌</span><b class="${cls(r.chg)}">${sign(r.chg)}${fmt(r.chg)}（${sign(r.pct)}${r.pct}%）</b></div>
-        <div><span>開盤</span><b>${fmt(r.o)}</b></div><div><span>最高</span><b>${fmt(r.h)}</b></div><div><span>最低</span><b>${fmt(r.l)}</b></div><div><span>成交值</span><b>${r.vol}</b></div>
+        <div><span>漲跌</span><b class="brk ${cls(r.chg)}"><span class="nw">${sign(r.chg)}${fmt(r.chg)}</span><span class="nw">（${sign(r.pct)}${r.pct}%）</span></b></div>
+        <div><span>開盤</span><b>${fmt(r.o)}</b></div><div><span>最高</span><b>${fmt(r.h)}</b></div><div><span>最低</span><b>${fmt(r.l)}</b></div><div><span>成交金額</span><b>${r.vol}</b></div>
       </div>
       <div class="r-actions"><a class="btn" href="${pdfUrl(r)}" target="_blank" rel="noopener">📄 原始筆記 PDF</a><a class="btn" href="#market">📰 當週市場資訊</a><span class="badge" style="align-self:center">部位：${r.position}</span></div>
     </div>
@@ -639,8 +640,8 @@ const pctTxt = v => v==null?'—':v+'%';
 
 /* 明細表可選欄位：[key, 欄名, 格式, 群組, 預設顯示] */
 const COLS = [
-  ['idx','加權','n2','大盤',1],['chg','漲跌','c2','大盤',0],['pct','漲跌%','pct','大盤',1],['vol','成交量(億)','n0','大盤',0],
-  ['fiSpot','外資現貨(億)','c2','外資期貨',1],['fiOI','外資期貨<br>總未平倉','c0','外資期貨',0],['fiRel','外資期貨<br>相對結算','c0','外資期貨',1],['fiDelta','前日增減','c0','外資期貨',1],
+  ['idx','加權','n2','大盤',1],['chg','漲跌','c2','大盤',0],['pct','漲跌%','pct','大盤',1],['vol','成交金額(億)','n0','大盤',0],
+  ['fiSpot','外資現貨(億)','c2','外資期貨',1],['fiOI','外資期貨<br>總未平倉','c0','外資期貨',0],['fiRel','外資期貨<br>相對結算','c0','外資期貨',1],['fiDelta','較前日','c0','外資期貨',1],
   ['bp','BP 金額','n0','外資選擇權',1],['sp','SP 金額','n0','外資選擇權',0],['bc','BC 金額','n0','外資選擇權',0],['sc','SC 金額','n0','外資選擇權',0],['bpsp','BP/SP<br>增幅比','r1','外資選擇權',0],['bcsc','BC/SC<br>增幅比','r1','外資選擇權',0],
   ['mxLong','微台多','n0','散戶',1],['mxShort','微台空','n0','散戶',1],['rtLong','小+微多','n0','散戶',0],['rtShort','小+微空','n0','散戶',0],['rtLongPct','微台多單百分位','pp','散戶',1],['rtShortPct','微台空單百分位','pp','散戶',0],
   ['sig','訊號','sig','訊號',1]
@@ -690,17 +691,17 @@ function renderChips(){
       <div class="card r-head">
         <div class="eyebrow">資料更新至 ${L.date.replace(/-/g,'/')}（${weekday(L.date)}）${L.settle===999?'・結算日':''}</div>
         <h1>每日籌碼</h1>
-        <div class="r-ohlc num">
+        <div class="r-ohlc two num">
           <div><span>加權收盤</span><b class="${cls(L.chg)}">${n2(L.idx)}</b></div>
-          <div><span>漲跌</span><b class="${cls(L.chg)}">${sign(L.chg)}${n2(L.chg)}（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</b></div>
-          <div><span>成交量</span><b>${n0(L.vol)} 億</b></div>
+          <div><span>漲跌</span><b class="brk ${cls(L.chg)}"><span class="nw">${sign(L.chg)}${n2(L.chg)}</span><span class="nw">（${sign(L.pct)}${L.pct==null?'—':L.pct.toFixed(2)}%）</span></b></div>
+          <div><span>成交金額</span><b>${n0(L.vol)} 億</b></div>
           <div><span>外資現貨</span><b class="${cls(L.fiSpot)}">${sign(L.fiSpot)}${n2(L.fiSpot)} 億</b></div>
         </div>
         <div class="sigs"><span class="sigs-h">今日訊號</span>${sigPills(L)}
           ${lastStrong?`<span class="sigs-last">最近一次強烈落底：<b class="num">${lastStrong.date.replace(/-/g,'/')}</b>・<a href="signals.html#strong" style="color:#93C5FD">看訊號回測 →</a></span>`:''}</div>
       </div>
       <div class="card" style="margin-top:12px"><div class="kpis k4">
-        ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`前日增減 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
+        ${kpi('外資期貨未平倉（相對結算日）',sgn0(L.fiRel)+' 口',`較前日 ${sgn0(L.fiDelta)}・總未平倉 ${n0(L.fiOI)}`)}
         ${kpi('外資 BP 金額',n0(L.bp),`較前日 ${sgn0(delta('bp'))}・BP/SP 增幅比 ${L.bpsp==null?'—':L.bpsp.toFixed(1)+'%'}`)}
         ${kpi('外資 BC／SC 金額',`${n0(L.bc)}／${n0(L.sc)}`,`BC/SC 增幅比 ${L.bcsc==null?'—':L.bcsc.toFixed(1)+'%'}`)}
         ${kpi('微台多單／空單',`${n0(L.mxLong)}／${n0(L.mxShort)}`,`多單較前日 ${sgn0(delta('mxLong'))}・空單較前日 ${sgn0(delta('mxShort'))}`)}
@@ -754,7 +755,7 @@ function renderChips(){
       cols=a==='all'?COLS.map(c=>c[0]):colsDefault(); colsSave(cols); syncChecks(); drawTable(); });
     syncChecks();
 
-    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote')) : null;
+    const credit = M ? renderCredit(M,$('#creditBody'),$('#creditNote'),new Map(R.map(r=>[r.date,r]))) : null;
     const charts=[], legends=[]; let sync=null;
     const clamp=d=>d<first?first:d>last?last:d;
     // 日期區間：按鈕、起訖日期，或直接在任一張圖上（點一下後）滾輪縮放、拖曳，都會同步到所有圖、明細表、信用交易明細
@@ -794,7 +795,7 @@ function renderChips(){
     s1.setData(R.filter(r=>r.fiRel!=null).map(r=>({time:T(r),value:r.fiRel,color:r.fiRel>=0?UP:(r.fiRel<=-10000?DN:'rgba(16,185,129,.5)')})));
     s1.createPriceLine({price:-20000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'−2萬'});
     s1.createPriceLine({price:10000,color:'#F59E0B',lineStyle:2,lineWidth:1,title:'+1萬'});
-    legend(1,r=>`相對結算 <b class="${cls(r.fiRel)}">${n0(r.fiRel)}</b> 前日 <span class="${cls(r.fiDelta)}">${n0(r.fiDelta)}</span> 總未平倉 ${n0(r.fiOI)}`,c);
+    legend(1,r=>`相對結算 <b class="${cls(r.fiRel)}">${n0(r.fiRel)}</b> 較前日 <span class="${cls(r.fiDelta)}">${n0(r.fiDelta)}</span> 總未平倉 ${n0(r.fiOI)}`,c);
 
     c=mk(2); lines(c,[['sc','#10B981'],['bc','#F59E0B'],['sp','#EF4444'],['bp','#A855F7']]);
     legend(2,r=>`<span style="color:#C084FC">BP ${n0(r.bp)}</span> <span class="up">SP ${n0(r.sp)}</span> <span style="color:#F59E0B">BC ${n0(r.bc)}</span> <span class="down">SC ${n0(r.sc)}</span>`,c);
@@ -845,7 +846,7 @@ function renderChips(){
 const PEND = /^(未達成|未突破|未站回|未確認|未再跌破)/;
 function btFmt(v,f){
   if(v===null||v===undefined||v==='') return '—';
-  if(typeof v!=='number') return String(v);
+  if(typeof v!=='number') return String(v).replace(/(\d{4})-(\d{2})-(\d{2})/g,'$1/$2/$3');   // 日期一律顯示 2026/11/02
   if(f==='pct') return (v>0?'+':'')+v.toFixed(2)+'%';
   if(f==='pct0') return v.toFixed(2)+'%';
   if(f==='num') return fmt(v,2);
@@ -932,7 +933,7 @@ function renderSignals(){
 
     const lead=s=>{
       const ex=r=>btPick(s.excess,{'持有週期':r});
-      if(s.id==='strong') return `計入 ${bv(s.count)} 筆訊號（原始 ${bv(s.raw)} 筆，冷卻期移除：${s.removed.length?s.removed.join('、'):'無'}）。
+      if(s.id==='strong') return `計入 ${bv(s.count)} 筆訊號（原始 ${bv(s.raw)} 筆，冷卻期移除：${s.removed.length?s.removed.map(dt).join('、'):'無'}）。
         首日收盤進場持有 30 天，勝率 ${bv(ex('30天')['訊號勝率'],'pct0')}（所有交易日基準 ${bv(ex('30天')['基準勝率'],'pct0')}），
         期望值 ${bv(ex('30天')['訊號期望值'],'pct')}（基準 ${bv(ex('30天')['基準期望值'],'pct')}），超額 ${bv(ex('30天')['超額期望值'],'pct',1)}。`;
       // BP 系列：亮燈前 30 天（日曆天）內自高點的跌幅；BC 系列：自低點的漲幅
@@ -1217,7 +1218,7 @@ function renderSignals(){
         </tbody></table></div>
         <p class="bt-note bt-after">每格上面是平均報酬（第 N 天收盤比起算日收盤的漲跌幅，所有次數平均），下面是下跌機率（歷史上第 N 天收盤比起算日低的次數占幾成；次數少時只代表過去的結果，不代表下次的機率）；紫底＝下跌機率比基準高 15 個百分點以上（最後一欄是高 10 個百分點以上）。
           全部只用當天就知道的資訊：「熄燈」＝前一個交易日亮、當天沒亮；「連續亮 K 天以上後熄燈」看的是熄燈前連續亮了幾個交易日。
-          「一段亮燈的最後一天」要等之後沒再亮才知道，等於偷看未來，所以不用。外資期貨淨單＝工作表1「外資(大小台)期貨未平倉」，由 ≥0 變成 &lt;0。${ext.some(r=>r.key==='ratio')?'BC÷SC 是同一天外資 BC 金額除以 SC 金額，用來排除「大盤上漲讓 BC 金額跟著變大」的影響，只當參考。':''}</p>
+          「一段亮燈的最後一天」要等之後沒再亮才知道，等於偷看未來，所以不用。外資期貨淨單＝外資(大小台)期貨總未平倉，由 ≥0 變成 &lt;0。${ext.some(r=>r.key==='ratio')?'BC÷SC 是同一天外資 BC 金額除以 SC 金額，用來排除「大盤上漲讓 BC 金額跟著變大」的影響，只當參考。':''}</p>
         <h3 class="bt-h3">2012 年以來跌 10% 以上的高點：高點前 90 天內有沒有亮燈？</h3>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">高點（收盤）</th><th class="r">高點收盤</th><th class="r">之後最低</th><th class="r">最大跌幅</th><th class="r">高點前 90 天內亮燈</th><th class="r">最近一次亮燈</th></tr></thead><tbody>
           ${H.tops.map(t=>`<tr><td class="r">${dt(t.date)}</td><td class="r">${fmt(t.close)}</td><td class="r">${dt(t.low)}</td><td class="r down">${btFmt(t.drop,'pct')}</td>
@@ -1298,7 +1299,7 @@ function renderSignals(){
         <span class="bt-switch-sub" id="btSwSub"></span></div></div>
       ${res.signals.map(section).join('')}
       <details class="card bt-details" id="definitions"><summary>定義與計算方式</summary><ul>
-        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、落底訊號用到的欄位（強烈落底由網站自算，規則同每日籌碼頁）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC、SC、BP 金額。網頁開啟時即時讀取並計算。</li>
+        <li><b>資料來源</b>：每日籌碼試算表「工作表1」的加權指數收盤、落底訊號用到的欄位（強烈落底由網站自算，規則同每日籌碼頁）、外資(BC)／(BP)OP未平倉金額與結算比（T、W 欄）、外資(大小台)期貨未平倉；「Sheet1」的外資 BC（H 欄）、SC、BP 金額。網頁開啟時即時讀取並計算。</li>
         <li><b>持有週期</b>：7／14／30／60／90 個日曆天（BP極端過熱紅燈另外加上「第一次穩定達到 100%」那天與 120 天，這個天數會隨新資料浮動；BP過熱紫燈、BP紫爆與 BC 系列加上 120 天），出場價取到期日當天或之前最後一個交易日的收盤。資料不足一個完整週期的事件列為「未完成」，不計入統計。</li>
         <li><b>燈號（逐日判斷）</b>：當天的值 ≥ 當天以前（含當天）所有資料由大到小第 k 大的值，k＝資料天數×門檻百分比，無條件捨去、至少 1。只用當天以前的資料，所以不會因為後來的資料而改變（試算表的條件格式是拿整欄比較、包含之後的資料，舊日期的顏色會和這裡不同）。2012 年起判斷；連續亮燈只取第一天，距離上一個亮燈日滿 10 個交易日才算新的一次。
           <ul>
@@ -1462,10 +1463,12 @@ const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const escHTML = s => s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const squash = s => s.replace(/\s/g,'').toLowerCase();
 // 忽略空白；英數開頭／結尾要是完整單字（BP 不會命中 BPS）
+// 燈號與名詞都是外資；「自營 BP 過熱」這類自營商數字不連結、不算搜尋命中
+const NOT_DEALER='(?<!自營\\s?)';
 function termPat(n){
   const t=n.trim(); if(!t) return null;
   const core=[...t.replace(/\s/g,'')].map(escRe).join('\\s*');
-  return (/^[A-Za-z0-9]/.test(t)?'(?<![A-Za-z0-9])':'')+core+(/[A-Za-z0-9]$/.test(t)?'(?![A-Za-z0-9])':'');
+  return NOT_DEALER+(/^[A-Za-z0-9]/.test(t)?'(?<![A-Za-z0-9])':'')+core+(/[A-Za-z0-9]$/.test(t)?'(?![A-Za-z0-9])':'');
 }
 const glossOf = q => (D.glossary||[]).find(([names])=>names.split('|').some(n=>squash(n)===squash(q)));
 // 查詢字串 → {re, g}；與名詞表相符時一併搜尋同義詞（紫爆／紫燈）
@@ -1618,7 +1621,7 @@ function glossary(root){
     pats.push({n,p:/^[\w]/.test(n)?`(?<![A-Za-z0-9])${esc}(?![A-Za-z0-9])`:esc});
   }));
   pats.sort((a,b)=>b.n.length-a.n.length);
-  const re=new RegExp(pats.map(x=>x.p).join('|'),'g');
+  const re=new RegExp(NOT_DEALER+'(?:'+pats.map(x=>x.p).join('|')+')','g');
   const SKIP='a,script,style,.noterm,.term,.chart,.chart-legend,.toc,.nav,.num,button,.colpick,#dtable';
   const seen=new WeakMap();
   const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>
