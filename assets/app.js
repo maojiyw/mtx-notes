@@ -327,9 +327,16 @@ function dailyNotes(){
 
 /* 主頁最下面「判斷回測」：
    1. 每日短評：開頭標「多／空／中立」的短評，看之後 7／30／90 天（日曆天）的漲跌對不對。
-   2. 每週復盤：每篇復盤的部位比上一篇高＝加碼（看多）、低＝減碼（看空），看復盤日之後的漲跌；並比較「照復盤部位」和「一直抱 1 倍」 */
-const levOf=s=>{ const p=String(s||'').split('→').pop(); if(/清倉/.test(p)) return 0; const m=p.match(/([\d.]+)\s*(x|%)/i); return m?(m[2]==='%'?+m[1]/100:+m[1]):null; };
-const LEV_EPS=0.15;   // 部位變化小於這個倍數算「維持」
+   2. 每週復盤：動作照文章持倉圖（紅框＝加碼＝看多、綠框＝減碼＝看空、沒圖或沿用上週的圖＝維持，不計分），看復盤日之後的漲跌；並比較「照復盤部位」和「一直抱 1 倍」 */
+// 部位一律顯示倍數（issue #24）：0.5x、1.0x、0.46x
+const levTxt=L=>L==null?'—':(Math.abs(L*10-Math.round(L*10))<1e-9?L.toFixed(1):String(+L.toFixed(2)))+'x';
+// 文章動作＋和上一篇比：「加碼到 0.7x（比上一篇 1.26x 為減碼）」；方向相同就不加註
+function actTxt(r,prev){
+  if(r.act==='維持'||r.actLev==null) return r.act||'—';
+  const s=`${r.act}到 ${levTxt(r.actLev)}`; if(prev==null) return s;
+  const d=r.actLev-prev, cmp=Math.abs(d)<0.005?'持平':d>0?'加碼':'減碼';
+  return cmp===r.act?s:`${s}（比上一篇 ${levTxt(prev)} ${cmp==='持平'?'持平':'為'+cmp}）`;
+}
 function judgeSec(){
   const S=window.MTXSheet, el=$('#judge'), sec=$('#judgeSec'); if(!S||!el||!sec) return;
   S.load().then(d=>{
@@ -354,9 +361,8 @@ function judgeSec(){
       :'<p class="bt-note">還沒有標方向的短評。短評開頭寫「強度＋方向」（例如「強烈看多，」「中等看空，」「中立：」），就會列入這裡。</p>';
 
     // 2. 每週復盤的部位
-    const R=D.reviews.slice().reverse().map(r=>({r,L:levOf(r.position)})).filter(x=>x.L!=null);
-    R.forEach((x,i)=>{ const p=i?R[i-1].L:null, dL=p==null?null:x.L-p;
-      x.act=dL==null?'起點':dL>=LEV_EPS?'加碼':dL<=-LEV_EPS?'減碼':'維持';
+    const R=D.reviews.slice().reverse().filter(r=>r.lev!=null).map(r=>({r,L:r.lev}));
+    R.forEach((x,i)=>{ x.act=x.r.act||'維持'; x.txt=actTxt(x.r,i?R[i-1].L:null);
       x.dir=x.act==='加碼'?'多':x.act==='減碼'?'空':null;
       x.close=closeOn(rows,x.r.date); x.ret={}; JUDGE_H.forEach(n=>x.ret[n]=fwdRet(rows,x.r.date,n)); });
     const acts=R.filter(x=>x.dir).map(x=>({dir:x.dir,r:x.ret}));
@@ -365,16 +371,16 @@ function judgeSec(){
     R.forEach((x,i)=>{ const a=x.close, b=i<R.length-1?R[i+1].close:last; if(!a||!b||b.date<=a.date) return; const r=b.idx/a.idx-1; eq*=1+x.L*r; bh*=1+r; });
     const avgL=avgArr(R.slice(0,-1).map(x=>x.L));
     const revHtml=`
-      <p class="bt-note">復盤 ${R.length} 篇：加碼 ${R.filter(x=>x.act==='加碼').length} 次、減碼 ${R.filter(x=>x.act==='減碼').length} 次、維持 ${R.filter(x=>x.act==='維持').length} 次。部位比上一篇高 ${LEV_EPS} 倍以上算加碼（看多）、低 ${LEV_EPS} 倍以上算減碼（看空），從復盤日收盤開始算（實際買賣可能在週中）。</p>
+      <p class="bt-note">復盤 ${R.length} 篇：加碼 ${R.filter(x=>x.act==='加碼').length} 次、減碼 ${R.filter(x=>x.act==='減碼').length} 次、維持 ${R.filter(x=>x.act==='維持').length} 次。動作照文章「回顧持倉狀況」的持倉圖：紅框＝加碼（看多）、綠框＝減碼（看空），沒有圖或沿用上一篇的圖＝維持；和上一篇部位方向不同時另外加註。從復盤日收盤開始算（實際買賣可能在週中）。<b>維持不計分</b>（灰字）。</p>
       ${judgeTable(acts,{7:'一週',30:'一個月',90:'一季'})}
       <div class="kpis k3 jk">
         <div class="kpi"><span>照復盤部位</span><b class="num ${cls(eq-1)}">${pctJ((eq-1)*100,1)}</b><em>${md(R[0].r.date)} 起，到 ${md(last.date)}</em></div>
         <div class="kpi"><span>一直抱 1 倍</span><b class="num ${cls(bh-1)}">${pctJ((bh-1)*100,1)}</b><em>同期間加權指數</em></div>
-        <div class="kpi"><span>平均部位</span><b class="num">${avgL==null?'—':avgL.toFixed(2)+' 倍'}</b><em>各篇復盤部位的平均</em></div>
+        <div class="kpi"><span>平均部位</span><b class="num">${avgL==null?'—':avgL.toFixed(2)+'x'}</b><em>各篇復盤部位的平均</em></div>
       </div>
-      <div class="tscroll"><table class="t bt jt"><thead><tr><th>復盤日</th><th>部位</th><th>倍數</th><th>動作</th>${JUDGE_H.map(n=>`<th>${n} 天後</th>`).join('')}</tr></thead><tbody>
-        ${R.slice().reverse().map(x=>`<tr><td><a href="${reviewUrl(x.r)}">${x.r.date.replace(/-/g,'/')}</a></td><td class="tx">${escTxt(x.r.position)}</td><td>${x.L.toFixed(2)}</td>
-          <td class="${x.act==='加碼'?'up':x.act==='減碼'?'down':''}">${x.act}</td>${JUDGE_H.map(n=>`<td>${x.dir?jCell(x.dir,x.ret[n],n):x.ret[n]==null?'<span class="pend">未到</span>':`<span class="${cls(x.ret[n])}">${pctJ(x.ret[n])}</span>`}</td>`).join('')}</tr>`).join('')}
+      <div class="tscroll"><table class="t bt jt"><thead><tr><th>復盤日</th><th class="tx">部位</th><th class="tx">動作（照文章）</th>${JUDGE_H.map(n=>`<th>${n} 天後</th>`).join('')}</tr></thead><tbody>
+        ${R.slice().reverse().map(x=>`<tr class="${x.dir?'':'jhold'}"><td><a href="${reviewUrl(x.r)}">${x.r.date.replace(/-/g,'/')}</a></td><td class="tx">${escTxt(x.r.position)}</td>
+          <td class="tx ${x.act==='加碼'?'up':x.act==='減碼'?'down':''}">${x.txt}${x.dir?'':'・不計分'}</td>${JUDGE_H.map(n=>`<td>${x.dir?jCell(x.dir,x.ret[n],n):x.ret[n]==null?'<span class="pend">未到</span>':pctJ(x.ret[n])}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div>`;
 
     el.innerHTML=`
