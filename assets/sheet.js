@@ -156,11 +156,13 @@ window.MTXSheet = (function(){
       const v=(r,n)=>{ const i=at(n); if(i<0) return null; const s=String(r[i]||'').replace(/,/g,'').trim(); return s===''?null:+s; };
       const grp=(r,p,u1,u2)=>{ const o={loan:v(r,p+'融資'+u1),loanChg:v(r,p+'資增減'+u1),short:v(r,p+'融券'+u2),shortChg:v(r,p+'券增減'+u2)}; return o.loan==null?null:o; };
       const codes=head.map(h=>(norm(h).match(/^(\w+)融資\(張\)$/)||[])[1]).filter(Boolean);
-      const ratio=[], credit=[];
+      const ratio=[], credit=[], seenR={}, seenC={};   // 同一天出現兩列（手動插列）只算一次，空白的部分用另一列補
       rows.forEach(r=>{ const d=String(r[0]||'').trim(); if(!/^\d{4}-\d\d-\d\d$/.test(d)) return;
-        const rt=v(r,'維持率(%)'); if(rt!=null) ratio.push([d,rt,v(r,'融資餘額扣除ETF(億)')]);
+        const rt=v(r,'維持率(%)'); if(rt!=null&&!seenR[d]){ seenR[d]=1; ratio.push([d,rt,v(r,'融資餘額扣除ETF(億)')]); }
         const etf={}; codes.forEach(c=>{ const e=grp(r,c,'(張)','(張)'); if(e) etf[c]=e; });
-        const tw=grp(r,'上市','(億)','(張)'); if(tw) credit.push({d,twse:tw,tpex:grp(r,'上櫃','(億)','(張)'),etf});
+        const tw=grp(r,'上市','(億)','(張)'), tp=grp(r,'上櫃','(億)','(張)'); if(!tw) return;
+        const o=seenC[d]; if(o){ if(!o.tpex) o.tpex=tp; codes.forEach(c=>{ if(!o.etf[c]&&etf[c]) o.etf[c]=etf[c]; }); return; }
+        credit.push(seenC[d]={d,twse:tw,tpex:tp,etf});
       });
       ratio.sort((a,b)=>a[0]<b[0]?-1:1); credit.sort((a,b)=>a.d<b.d?-1:1);
       const etfs={}; codes.forEach(c=>etfs[c]=ETF_NAMES[c]||'');

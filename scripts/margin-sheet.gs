@@ -12,6 +12,8 @@
  *   - 新增證交所已公布的日期（也會補最近 10 天內漏掉的日期）
  *   - 櫃買還沒公布時先寫入、上櫃欄位空白，之後的執行抓到就補上
  * B 欄「維持率」：玩股網擋國外連線時抓不到，請手動填（例如 119.53）；程式不會覆蓋手動填的數字。
+ *   當天的列還沒出現時，可以自己在任何位置新增一列，填日期和維持率；程式執行時會把同一天合併成一列。
+ * 每次執行後整張表依日期由新到舊排好（最新的在最上面），日期欄存成文字，不需要自己排序。
  */
 
 const SHEET = '信用交易';
@@ -35,58 +37,72 @@ function setup() {
   const wg = fetchWantgoo_();
   Logger.log(wg ? '玩股網：抓得到（最新 ' + wg[wg.length - 1].join(' ') + '），維持率會自動更新'
                 : '玩股網：抓不到（被擋），B 欄維持率請每天手動填');
-  if (wg) fillRatio_(sh, wg);
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   RUN_HOURS.forEach(h => ScriptApp.newTrigger('update').timeBased().atHour(h).nearMinute(30).everyDays(1).create());
   Logger.log('已設定每天 ' + RUN_HOURS.map(h => h + ':30').join('、') + ' 自動更新');
   run_(true);
 }
-
 /* ---------- 排程執行 ---------- */
 function update() { run_(false); }
+/* 整張表讀進來、以日期為準處理、最後依日期由新到舊整張寫回。
+   所以手動插列、手動排序、同一天出現兩列都沒關係：同一天會合併成一列（空白格用另一列的數字補），日期一律存成文字 yyyy-MM-dd。 */
 function run_(force) {
   const now = new Date();
   const hour = +Utilities.formatDate(now, 'Asia/Taipei', 'H');
-  if (!force && hour < 21) return;                      // 證交所約 21:00 公布
   const sh = getSheet_();
-  const last = sh.getLastRow() > 1 ? ymd_(sh.getRange(sh.getLastRow(), 1).getValue()) : null;
+  const by = readRows_(sh);
   const today = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
-  let d = last ? addDays_(last, 1) : addDays_(today, -10);
-  if (d < addDays_(today, -10)) d = addDays_(today, -10);
-  for (; d <= today; d = addDays_(d, 1)) {
-    const wd = new Date(d + 'T12:00:00+08:00').getUTCDay();
-    if (wd === 0 || wd === 6) continue;
-    const tw = fetchTwse_(d); Utilities.sleep(3000);
-    if (!tw) { Logger.log(d + ' 證交所沒有資料（休市或尚未公布）'); continue; }
-    let tp = null; try { tp = fetchTpex_(d); } catch (e) { Logger.log(d + ' 櫃買讀取失敗：' + e); }
-    Utilities.sleep(3000);
-    if (!tp) Logger.log(d + ' 櫃買尚未公布，上櫃欄位先空白，之後補');
-    const row = [d, '', ''].concat(
-      [tw.loan, tw.loanChg, tw.short, tw.shortChg],
-      tp ? [tp.loan, tp.loanChg, tp.short, tp.shortChg] : ['', '', '', '']);
-    Object.keys(ETFS).forEach(c => { const e = tw.etf[c]; row.push.apply(row, e ? [e.loan, e.loanChg, e.short, e.shortChg] : ['', '', '', '']); });
-    sh.appendRow(row);
-    Logger.log(d + ' 已新增：上市資增減 ' + tw.loanChg + ' 億');
+  if (force || hour >= 21) {                              // 證交所約 21:00 公布
+    // 最近 10 天內：沒有這一天、或這一天只有手動填的維持率（上市欄位空白）→ 抓證交所
+    for (let d = addDays_(today, -10); d <= today; d = addDays_(d, 1)) {
+      const wd = new Date(d + 'T12:00:00+08:00').getUTCDay();
+      if (wd === 0 || wd === 6) continue;
+      if (by[d] && by[d][3] !== '') continue;
+      const tw = fetchTwse_(d); Utilities.sleep(3000);
+      if (!tw) { Logger.log(d + ' 證交所沒有資料（休市或尚未公布）'); continue; }
+      const row = by[d] || blankRow_(d);
+      put_(row, 3, [tw.loan, tw.loanChg, tw.short, tw.shortChg]);
+      Object.keys(ETFS).forEach((c, k) => { const e = tw.etf[c]; if (e) put_(row, 11 + k * 4, [e.loan, e.loanChg, e.short, e.shortChg]); });
+      by[d] = row;
+      Logger.log(d + ' 已新增：上市資增減 ' + tw.loanChg + ' 億');
+    }
+    // 最近 10 天內上櫃欄位（H～K）空白的日期，抓櫃買補上（櫃買有時比證交所晚公布）
+    Object.keys(by).filter(d => d >= addDays_(today, -10) && by[d][3] !== '' && by[d][7] === '').sort().forEach(d => {
+      let tp = null; try { tp = fetchTpex_(d); } catch (e) { Logger.log(d + ' 櫃買讀取失敗：' + e); }
+      Utilities.sleep(3000);
+      if (!tp) { Logger.log(d + ' 櫃買尚未公布，上櫃欄位先空白，之後補'); return; }
+      put_(by[d], 7, [tp.loan, tp.loanChg, tp.short, tp.shortChg]);
+      Logger.log(d + ' 已補上櫃資料');
+    });
+    const wg = fetchWantgoo_();
+    if (wg) fillRatio_(by, wg);
   }
-  fillTpex_(sh);
-  const wg = fetchWantgoo_();
-  if (wg) fillRatio_(sh, wg);
+  writeRows_(sh, by);
 }
-/** 最近 10 列中上櫃欄位（H～K）空白的日期，重抓櫃買補上 */
-function fillTpex_(sh) {
-  const lastRow = sh.getLastRow(); if (lastRow < 2) return;
-  const first = Math.max(2, lastRow - 9);
-  const v = sh.getRange(first, 1, lastRow - first + 1, 11).getValues();
-  v.forEach((r, i) => {
-    if (r[7] !== '') return;
-    const d = ymd_(r[0]);
-    let tp = null; try { tp = fetchTpex_(d); } catch (e) { Logger.log(d + ' 櫃買讀取失敗：' + e); }
-    Utilities.sleep(3000);
-    if (!tp) return;
-    sh.getRange(first + i, 8, 1, 4).setValues([[tp.loan, tp.loanChg, tp.short, tp.shortChg]]);
-    Logger.log(d + ' 已補上櫃資料');
+/** 讀整張表 → {日期: 一列}；同一天有好幾列就合併（每格取第一個不是空白的值） */
+function readRows_(sh) {
+  const by = {}, n = sh.getLastRow() - 1;
+  if (n < 1) return by;
+  sh.getRange(2, 1, n, HEAD.length).getValues().forEach(r => {
+    const d = ymd_(r[0]); if (!/^\d{4}-\d\d-\d\d$/.test(d)) return;
+    r[0] = d;
+    if (!by[d]) { by[d] = r; return; }
+    by[d].forEach((v, i) => { if (v === '' && r[i] !== '') by[d][i] = r[i]; });
   });
+  return by;
 }
+/** 依日期由新到舊整張寫回（最新的在最上面），日期欄設成純文字 */
+function writeRows_(sh, by) {
+  const rows = Object.keys(by).sort().reverse().map(d => by[d]);
+  const old = sh.getLastRow() - 1;
+  if (old > rows.length) sh.getRange(rows.length + 2, 1, old - rows.length, sh.getLastColumn()).clearContent();
+  if (!rows.length) return;
+  sh.getRange(2, 1, rows.length, 1).setNumberFormat('@');
+  sh.getRange(2, 1, rows.length, HEAD.length).setValues(rows);
+}
+function blankRow_(d) { const r = HEAD.map(() => ''); r[0] = d; return r; }
+function put_(row, at, vals) { vals.forEach((v, i) => row[at + i] = v); }
+
 
 /* ---------- 資料來源 ---------- */
 function getJson_(url, headers) {
@@ -128,14 +144,10 @@ function fetchWantgoo_() {
   } catch (e) { Logger.log('玩股網讀取失敗：' + e); return null; }
 }
 /** 把玩股網的維持率填進 B、C 欄（只填空白格，不覆蓋手動填的數字） */
-function fillRatio_(sh, wg) {
-  const n = sh.getLastRow() - 1; if (n < 1) return;
-  const by = {}; wg.forEach(r => by[r[0]] = r);
-  const rng = sh.getRange(2, 1, n, 3), v = rng.getValues(); let changed = false;
-  v.forEach(r => { const w = by[ymd_(r[0])]; if (!w) return;
-    if (r[1] === '') { r[1] = w[1]; changed = true; }
-    if (r[2] === '') { r[2] = w[2]; changed = true; } });
-  if (changed) rng.setValues(v);
+function fillRatio_(by, wg) {
+  wg.forEach(w => { const r = by[w[0]]; if (!r) return;
+    if (r[1] === '') r[1] = w[1];
+    if (r[2] === '') r[2] = w[2]; });
 }
 
 /* ---------- 歷史資料（網站 repo 的 data/margin.json，2014 年起） ---------- */
