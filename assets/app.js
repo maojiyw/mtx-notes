@@ -894,7 +894,7 @@ function evChart(el,rows,color){
   if(window.ResizeObserver){ let w=el.clientWidth; new ResizeObserver(()=>{ if(el.clientWidth!==w){ w=el.clientWidth; draw(); } }).observe(el); }
 }
 
-const SIG_COLOR = {strong:'#EF4444', bp:'#A855F7', bpv:'#C084FC', bpx:'#E879F9', bcy:'#F59E0B', bcg:'#10B981', bcx:'#D946EF', bpv5:'#2DD4BF', bpout:'#38BDF8'};
+const SIG_COLOR = {strong:'#EF4444', bp:'#A855F7', bpv:'#C084FC', bpx:'#E879F9', bcy:'#F59E0B', bcg:'#10B981', bcx:'#D946EF', bpv3:'#99F6E4', bpv5:'#2DD4BF', bpv10:'#0D9488', bpout:'#38BDF8'};
 const TOP_MARK = '#FB923C';   // 研發處「BP紅燈之後的起跌點」：歷史走勢圖上的起跌點箭頭
 function renderSignals(){
   nav('signals');
@@ -910,7 +910,7 @@ function renderSignals(){
       ['BP過熱',['bpv','bp','bpx'],'外資 BP 進入高水位，大跌時的極端行情：BP過熱紫燈（前 10%）、BP極端過熱紅燈（前 2%）、BP紫爆（與結算比前 1%）'],
       ['BC過熱',['bcy','bcg','bcx'],'外資 BC 進入高水位，大盤在高檔或暴漲時：BC過熱黃燈（前 10%）、BC極端過熱綠燈（前 1%）、BC紫爆（與結算比前 1%）'],
       // 研發處（名稱暫定）：研究中、結論還沒定案的題目
-      ['研發處',['bpv5','bpout'],'研究中的題目，結論還沒定案、樣本少，只當觀察：BP過熱紫燈連續 5 天、BP紅燈之後的起跌點']]
+      ['研發處',['bpv3','bpv5','bpv10','bpout'],'研究中的題目，結論還沒定案、樣本少，只當觀察：BP過熱紫燈連續 3／5／10 天（把連續紫燈當成 BP紅燈的概念）、BP紅燈之後的起跌點']]
       .map(([n,ids,d])=>[n,ids.filter(id=>res.signals.some(s=>s.id===id)),d]).filter(g=>g[1].length);
 
     const lead=s=>{
@@ -1242,7 +1242,7 @@ function renderSignals(){
         return `<td class="r${o!==Z.base&&h.win===1?' bt-top':''}">${pcG(h.avg)}<br><span class="bt-gap">勝率 ${Math.round(h.win*100)}%${o===Z.base?'':`（${h.n} 次）`}・最差 ${btFmt(h.min*100,'pct')}</span></td>`; };
       return `
         <h2 class="bt-h2" id="${s.id}-streak">研究：連續怎麼算、從哪一天進場？</h2>
-        <p class="bt-lead">連續亮燈常常因為結算或大盤上漲中斷一兩天，所以比較三種算法：嚴格連續（中間沒亮的交易日 0 天）、中間沒亮 3 個交易日以內、5 個交易日以內仍算同一段；<b>本頁其他各表用「${gName(Z.gap)}」</b>。${g35}${diffTxt}</p>
+        <p class="bt-lead">連續亮燈常常因為結算或大盤上漲中斷一兩天，所以比較 ${G.length} 種算法：${G.map(r=>r.gap?`中間沒亮 ${r.gap} 個交易日以內仍算同一段`:"嚴格連續（中間沒亮的交易日 0 天）").join("、")}；<b>本頁其他各表用「${gName(Z.gap)}」</b>。${g35}${diffTxt}</p>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">段落</th>${G.map(r=>`<th class="r">${gHead(r.gap)}</th>`).join('')}</tr></thead><tbody>
           ${rows.slice().reverse().map(c=>`<tr><td class="r">${ym((ref(c)||c).start)}</td>${G.map((r,v)=>cell(c,v)).join('')}</tr>`).join('')}
         </tbody></table></div>
@@ -1257,7 +1257,39 @@ function renderSignals(){
           <tr><td class="tx">第 ${K} 個亮燈日</td>${G.map(r=>`<td class="r">${segTxt(r.w100conf)}</td>`).join('')}</tr>
           <tr><td class="tx">首日（事後才知道）</td>${G.map(r=>`<td class="r">${segTxt(r.w100first)}</td>`).join('')}</tr>
         </tbody></table></div>
-        <p class="bt-note bt-after">只算已滿 ${M.w100conf.H} 天的 ${M.w100conf.done} 次（進行中的不算）；第 N 天＝進場後第 N 個日曆天（含）以前最後一個交易日的收盤，那一天每一次都高於進場日收盤才算 100%。只列前三段。</p>`;
+        <p class="bt-note bt-after">只算已滿 ${M.w100conf.H} 天的 ${M.w100conf.done} 次（進行中的不算）；第 N 天＝進場後第 N 個日曆天（含）以前最後一個交易日的收盤，那一天每一次都高於進場日收盤才算 100%。只列前三段。</p>
+        ${crossSec(s)}`;
+    };
+    // 研發處：連續 3／5／10 天與 BP紅燈對照，以及和 BP紅燈重疊多少（各連續紫燈分頁共用）
+    const crossSec=s=>{
+      const SS=res.signals.filter(x=>x.streak), red=res.signals.find(x=>x.id==='bp'); if(!red||!s.overlap) return '';
+      const HS=[14,30,red.turn&&red.turn.stable,60,90,120,250].filter((v,k,a)=>v&&a.indexOf(v)===k).sort((a,b)=>a-b);
+      const st=idxs=>Object.fromEntries(HS.map(N=>{ const v=idxs.map(i=>B.holdOutcome(mk,i,N)).filter(Boolean).map(x=>x[0]);
+        return [N,v.length?{n:v.length,win:v.filter(x=>x>0).length/v.length,avg:v.reduce((a,b)=>a+b,0)/v.length,min:Math.min(...v)}:{n:0}]; }));
+      const cols=[...SS.map(x=>[`${x.name}<br><span class="bt-gap">第 ${x.streak.K} 個亮燈日・中斷 ${x.streak.gap} 天內</span>`,st(x.idxs),x===s]),['BP極端過熱紅燈<br><span class="bt-gap">首日</span>',st(red.idxs),false]];
+      const sc=(o,N)=>{ const h=o[N]; if(!h||!h.n) return '<td class="r">—</td>';
+        return `<td class="r${h.win===1?' bt-top':''}">${pcG(h.avg)}<br><span class="bt-gap">勝率 ${Math.round(h.win*100)}%（${h.n} 次）・最差 ${btFmt(h.min*100,'pct')}</span></td>`; };
+      // 重疊：每一段裡 BP紅燈亮了幾天、BP紅燈首日在第 K 個亮燈日之前或之後
+      const O=s.overlap, K=s.streak.K, withRed=O.filter(o=>o.redDays>0).length;
+      const redIn=red.idxs.filter(i=>O.some(o=>i>=o.start-10&&i<=o.end)).length;
+      const rel=o=>{ if(o.redFirst==null) return '<span class="dim">沒有 BP紅燈</span>'; const d=o.redFirst-o.conf;
+        return `${dt(mk.d[o.redFirst])}<br><span class="bt-gap">${d===0?'同一天':d<0?`早 ${-d} 個交易日`:`晚 ${d} 個交易日`}</span>`; };
+      const sum=SS.map(x=>{ const o=x.overlap||[], w=o.filter(z=>z.redDays>0).length, ri=red.idxs.filter(i=>o.some(z=>i>=z.start-10&&i<=z.end)).length;
+        return `${x.name} ${o.length} 段，有 ${w} 段同時亮過 BP紅燈；BP紅燈 ${red.idxs.length} 次裡有 ${ri} 次落在這些段落裡`; });
+      return `
+        <h2 class="bt-h2" id="${s.id}-cross">研究：連續 3／5／10 天、BP紅燈對照</h2>
+        <p class="bt-lead">${sum.join('。')}。${(()=>{ const inAll=SS.filter(x=>red.idxs.every(i=>(x.overlap||[]).some(z=>i>=z.start-10&&i<=z.end))); const top=inAll[inAll.length-1];
+          return top?`換句話說，<b>BP紅燈全部都落在「${top.name}」的段落裡</b>，連續紫燈和 BP紅燈大多是同一段行情；天數要求越短，多出來沒有 BP紅燈的段落越多。`:''; })()}</p>
+        <p class="bt-note">每格上面是平均報酬，下面是勝率（次數）與最差一次；<span class="bt-top-lg">底色</span>＝勝率 100%。<b>本頁</b>是 ${s.name}。</p>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">持有</th>${cols.map(([h,,me])=>`<th class="r">${me?'<b>':''}${h}${me?'</b>':''}</th>`).join('')}</tr></thead><tbody>
+          ${HS.map(N=>`<tr><td class="r">${N} 天</td>${cols.map(([,o])=>sc(o,N)).join('')}</tr>`).join('')}
+        </tbody></table></div>
+        <h3 class="bt-h3">${s.name}：每一段和 BP紅燈重疊多少</h3>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">第 ${K} 個亮燈日</th><th class="r">這一段</th><th class="r">BP紅燈亮了幾天</th><th class="r">BP紅燈首日</th></tr></thead><tbody>
+          ${O.slice().reverse().map(o=>`<tr><td class="r"><b>${dt(mk.d[o.conf])}</b></td><td class="r">${dt(mk.d[o.start])} ～ ${dt(mk.d[o.end]).slice(5)}<br><span class="bt-gap">亮 ${o.n} 天${o.live?'（進行中）':''}</span></td>
+            <td class="r">${o.redDays?`<b>${o.redDays} 天</b>`:'<span class="dim">0</span>'}</td><td class="r">${rel(o)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="bt-note bt-after">${O.length} 段裡有 ${withRed} 段同時亮過 BP紅燈；BP紅燈首日（冷卻 10 個交易日）${red.idxs.length} 次裡有 ${redIn} 次落在這些段落（含段落開始前 10 個交易日）。「早／晚」＝BP紅燈首日比第 ${K} 個亮燈日早或晚幾個交易日。</p>`;
     };
     // 歷史走勢圖（各分頁共用）
     const histHtml=(s,note)=>`
@@ -1270,9 +1302,7 @@ function renderSignals(){
           <p class="bt-range" id="${s.id}-rg"></p>
           <div class="chart"><div class="chart-legend num" id="${s.id}-lg"></div><div class="bt-hist" id="${s.id}-hc" style="position:absolute;inset:0"></div></div></div>`;
     // 研發處「BP紅燈之後的起跌點」（引擎在 backtest.js 的 topStudy）
-    const studySection=(s,k)=>{
-      const st=s.study, open=`<section id="${s.id}" data-sig="${s.id}"${k?' hidden':''}>`;
-      if(!st) return `${open}<p class="bt-lead">資料太少，還算不出 BP極端過熱紅燈「勝率穩定 100%」的天數，這一頁先不顯示。</p></section>`;
+    const studyBody=(s,st,nm)=>{   // 起跌點研究的內容（一個起算訊號）
       const S=st.S, D=st.sig.filter(x=>x.done), last=st.sig[st.sig.length-1];
       const med=a=>{ const b=a.slice().sort((x,y)=>x-y), m=b.length>>1; return b.length?Math.round(b.length%2?b[m]:(b[m-1]+b[m])/2):null; };
       const rng=(a,f)=>a.length?`${f?f(Math.min(...a)):Math.min(...a)}～${f?f(Math.max(...a)):Math.max(...a)}`:'—';
@@ -1284,8 +1314,8 @@ function renderSignals(){
       // 目前這一次
       const now=last?(()=>{ const age=mk.days(last.i,LAST), hiR=mk.c[last.hi]/last.close-1, ddN=mk.c[LAST]/mk.c[last.hi]-1;
         return `<div class="card bt-status noterm"><div class="dgrid keys">
-          <div><span>最近一次 BP紅燈</span><b class="num">${dt(last.date)}</b><em>收盤 ${fmt(last.close)}・距今 ${age} 天</em></div>
-          <div><span>第 ${S} 天（勝率穩定 100%）</span><b class="num">${dt(last.dS)}</b><em>${last.done?'已經過了':`還有 ${S-age} 天`}</em></div>
+          <div><span>最近一次 ${nm}</span><b class="num">${dt(last.date)}</b><em>收盤 ${fmt(last.close)}・距今 ${age} 天</em></div>
+          <div><span>第 ${S} 天（BP紅燈勝率穩定 100%）</span><b class="num">${dt(last.dS)}</b><em>${last.done?'已經過了':`還有 ${S-age} 天`}</em></div>
           <div><span>訊號後最高收盤</span><b class="num ${cls(hiR)}">${last.hi===last.i?'就是首日':btFmt(hiR*100,'pct')}</b><em>${dt(mk.d[last.hi])}・${fmt(mk.c[last.hi])}</em></div>
           <div><span>目前距最高</span><b class="num ${cls(ddN)}">${ddN<0?btFmt(ddN*100,'pct'):'就是最高'}</b><em>${dt(mk.d[LAST])} 收 ${fmt(mk.c[LAST])}${last.drops[0].hit!=null?`・${dt(mk.d[last.drops[0].hit])} 已跌滿 5%`:''}</em></div>
         </div></div>`; })():'';
@@ -1302,14 +1332,14 @@ function renderSignals(){
       const num0=v=>v==null?'—':`<span class="${cls(v)}">${sign(v)}${Math.round(v).toLocaleString()}</span>`;
       const days=v=>v?`<b>${v} 天</b>`:'<span class="dim">0</span>';
       const t2=st.tops.map(t=>{ const w=t.w; if(!w) return '';
-        return `<tr><td class="r"><b>${dt(mk.d[t.P])}</b><br><span class="bt-gap">${t.X.map(x=>x*100+'%').join('／')}・BP紅燈 ${t.from.map(d=>dt(d).slice(0,7)).join('、')}</span></td>
+        return `<tr><td class="r"><b>${dt(mk.d[t.P])}</b><br><span class="bt-gap">${t.X.map(x=>x*100+'%').join('／')}・${nm} ${t.from.map(d=>dt(d).slice(0,7)).join('、')}</span></td>
           <td class="r">${pcG(w.idx10)}</td><td class="r">${w.dayUpFiDown?`<b>是</b>（${num0(w.dayFi)}）`:`<span class="dim">否</span>（${num0(w.dayFi)}）`}</td>
           <td class="r">${num0(w.fiChg)}</td><td class="r">${w.upFiDown} 天</td><td class="r">${num0(w.spot)}</td>
           <td class="r">${days(w.bcy)}</td><td class="r">${days(w.sc10)}</td><td class="r">${pcG(w.bcChg)}</td><td class="r">${pcG(w.scChg)}</td>
           <td class="r">${pcG(w.bpChg)}</td><td class="r">${w.upBP} 天</td><td class="r">${pcG(w.rtChg)}</td><td class="r">${pcG(w.mxChg)}</td>
           <td class="r">${w.mxPct==null?'—':w.mxPct.toFixed(1)}</td><td class="r">${pcG(w.ma60)}</td></tr>`; }).join('');
       // 表三：出現比例（BP紅燈後的起跌點 vs 2012 年以來跌 10% 以上的波段高點 vs 一般 20 日新高日）
-      const G3=[['post','BP紅燈之後的起跌點'],['z10','2012 年以來跌 10% 以上的波段高點'],['ctrl','一般的 20 日新高日']];
+      const G3=[['post',`${nm}之後的起跌點`],['z10','2012 年以來跌 10% 以上的波段高點'],['ctrl','一般的 20 日新高日']];
       const rt=(g,k)=>{ const o=st.rates[g][k]; return o&&o.n?o.yes/o.n:null; };
       const c3=(g,k)=>{ const o=st.rates[g][k]; if(!o||!o.n) return '<td class="r">—</td>'; const v=o.yes/o.n, b=rt('ctrl',k);
         return `<td class="r${g!=='ctrl'&&b!=null&&v-b>=0.15?' bt-top':''}"><b class="num">${Math.round(v*100)}%</b><br><span class="bt-gap">${o.yes} / ${o.n}</span></td>`; };
@@ -1328,15 +1358,13 @@ function renderSignals(){
       const t5=st.rules.map(R=>`<tr class="grp"><td class="tx" colspan="5"><b>${R.name}</b></td></tr>`+R.rows.slice().reverse().map(r=>`<tr><td class="r">${dt(r.date)}</td>
         <td class="r">${r.hit==null?'<span class="pend">還沒出現</span>':`${dt(mk.d[r.hit])}<br><span class="bt-gap">第 ${r.day} 天・${btFmt(r.ret*100,'pct')}</span>`}</td>
         <td class="r">${rel(r.vs5)}</td><td class="r">${rel(r.vs10)}</td><td class="r">${r.dd40==null?'—':`${pcG(r.dd40)}${r.dd40done?'':'<br><span class="pend">未滿 40 天</span>'}`}</td></tr>`).join('')).join('');
-      return `${open}
+      return `
         ${now}
-        <p class="bt-lead"><b>研發處的題目，結論還沒定案。</b>BP極端過熱紅燈（簡稱 BP紅燈）之後，從第 ${S} 天起勝率穩定 100%（見 BP紅燈分頁；天數隨資料浮動）。這一頁看<b>第 ${S} 天以後，第一次從高點跌 5%／10% 在什麼時候</b>，以及起跌點前 10 個交易日的籌碼有沒有徵兆。
-          已滿 ${S} 天的 ${bv(D.length)} 次：第一次跌 5% 在訊號後第 ${rng(d5)} 天（中位數第 ${med(d5)??'—'} 天），起跌點比訊號日收盤高 ${rng(g5,pp)}；第一次跌 10% 在第 ${rng(d10)} 天（中位數第 ${med(d10)??'—'} 天）。
+        <p class="bt-lead"><b>${nm}</b>：已滿 ${S} 天的 ${bv(D.length)} 次：第一次跌 5% 在訊號後第 ${rng(d5)} 天（中位數第 ${med(d5)??'—'} 天），起跌點比訊號日收盤高 ${rng(g5,pp)}；第一次跌 10% 在第 ${rng(d10)} 天（中位數第 ${med(d10)??'—'} 天）。
           ${pre5.length?`「勝率穩定 100%」不代表中間沒有回檔：第 ${S} 天以前，有 ${pre5.length} 次曾從高點回落 5% 以上（${pre5.map(x=>dt(x.date)).join('、')}）。`:''}樣本只有 ${D.length} 次，只能當個案觀察。</p>
-        ${histHtml(s,'紫色箭頭＝BP紅燈首日，橘色箭頭＝起跌點（標 5%／10%）。')}
         <h2 class="bt-h2" id="${s.id}-events">表一　第 ${S} 天以後，第一次跌 5%／10%</h2>
-        <p class="bt-note">從 BP紅燈首日起追蹤最高收盤；第 ${S} 天以後第一次「收盤比最高收盤低 5%（10%）」那天＝跌滿 5%（10%），那個最高收盤的日子＝起跌點（可能在第 ${S} 天以前）。天數都是首日後第幾個日曆天，漲幅相對首日收盤，只看收盤。</p>
-        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">BP紅燈</th><th class="r">首日收盤</th><th class="r">第 ${S} 天報酬</th><th class="r">第 ${S} 天以前<br>最大回檔</th>
+        <p class="bt-note">從${nm}首日起追蹤最高收盤；第 ${S} 天以後第一次「收盤比最高收盤低 5%（10%）」那天＝跌滿 5%（10%），那個最高收盤的日子＝起跌點（可能在第 ${S} 天以前）。天數都是首日後第幾個日曆天，漲幅相對首日收盤，只看收盤。</p>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">${nm}</th><th class="r">首日收盤</th><th class="r">第 ${S} 天報酬</th><th class="r">第 ${S} 天以前<br>最大回檔</th>
           <th class="r">5%：起跌點</th><th class="r">跌滿 5%</th><th class="r">10%：起跌點</th><th class="r">跌滿 10%</th></tr></thead><tbody>${t1}</tbody></table></div>
         <h2 class="bt-h2" id="${s.id}-pre">表二　起跌點前 1～10 個交易日</h2>
         <p class="bt-note">10 日變化＝起跌點前一天收盤比前 11 天收盤。外資期貨＝外資(大小台)期貨總未平倉（淨單，口），減少＝加空或減多；外資現貨單位億元。「漲、BP 增加」＝指數上漲、BP 金額也比前一天多的天數（BP 逆勢增加）。散戶看多（小+微）2024 年 7 月以前只有小台；微台 2024/07/29 才有資料。</p>
@@ -1346,7 +1374,7 @@ function renderSignals(){
         <p class="bt-note">每格是符合的比例（符合 / 有資料的次數）。波段高點＝之後收盤跌 10% 以上、再反彈 10% 才找下一個高點（2012 年起，共 ${st.n.z10} 個）；一般的 20 日新高日＝收盤是近 20 個交易日最高、之後 20 個交易日內沒有跌 5% 的日子（共 ${st.n.ctrl} 天）。前兩列看當天，其他看前 1～10 個交易日。<span class="bt-top-lg">底色</span>＝比一般新高日高 15 個百分點以上。</p>
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="tx">徵兆</th>${G3.map(([g,n])=>`<th class="r">${n}<br><span class="bt-gap">${st.n[g]} ${g==='ctrl'?'天':'個'}</span></th>`).join('')}</tr></thead><tbody>${t3}</tbody></table></div>
         <div class="card bt-pc bt-after"><ul>
-          <li><b>BP紅燈之後的起跌點</b>：比一般新高日明顯常見的是${hp.length?hp.join('、'):'（沒有）'}；明顯比較少的是${lp.length?lp.join('、'):'（沒有）'}。</li>
+          <li><b>${nm}之後的起跌點</b>：比一般新高日明顯常見的是${hp.length?hp.join('、'):'（沒有）'}；明顯比較少的是${lp.length?lp.join('、'):'（沒有）'}。</li>
           <li><b>2012 年以來跌 10% 以上的波段高點</b>：比一般新高日明顯常見的是${hz.length?hz.join('、'):'（沒有）'}。</li>
           <li>一般新高日也常出現這些情況，比例高不代表出現就會跌，要看下面的表四。</li></ul></div>
         <h2 class="bt-h2" id="${s.id}-pred">表四　出現這些情況後，真的比較容易跌嗎？</h2>
@@ -1354,8 +1382,20 @@ function renderSignals(){
         <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="tx">情況</th><th class="r">天數<br>有／沒有</th><th class="r">40 日內跌 5%</th><th class="r">40 日內跌 10%</th><th class="r">跌 10%<br>不含 ${st.thisYear} 年</th></tr></thead><tbody>${t4}</tbody></table></div>
         <h2 class="bt-h2" id="${s.id}-rule">表五　拿來當出場訊號：第 ${S} 天以後第一次出現就賣</h2>
         <p class="bt-note">從第 ${S} 天起，第一次在 20 日新高日出現該情況的日子；和起跌點比早或晚幾個交易日、價位高或低多少（早太多會錯過後面的漲幅）。之後 40 日最深＝之後 40 個交易日內最低收盤比那天低多少。</p>
-        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">BP紅燈</th><th class="r">第一次出現</th><th class="r">比 5% 起跌點</th><th class="r">比 10% 起跌點</th><th class="r">之後 40 日最深</th></tr></thead><tbody>${t5}</tbody></table></div>
-        <p class="bt-note bt-after">樣本很少（BP紅燈 ${D.length} 次），各表只能當觀察，不能當作買賣規則。</p>
+        <div class="bt-scroll noterm"><table class="t bt"><thead><tr><th class="r">${nm}</th><th class="r">第一次出現</th><th class="r">比 5% 起跌點</th><th class="r">比 10% 起跌點</th><th class="r">之後 40 日最深</th></tr></thead><tbody>${t5}</tbody></table></div>
+        <p class="bt-note bt-after">樣本很少（${nm} ${D.length} 次），各表只能當觀察，不能當作買賣規則。</p>`;
+    };
+    // 起跌點研究頁：上方切換「起算訊號」（BP紅燈／BP過熱紫燈連續 3／5／10 天），下方內容與走勢圖箭頭跟著換
+    const studySection=(s,k)=>{
+      const open=`<section id="${s.id}" data-sig="${s.id}"${k?' hidden':''}>`, X=s.studies||[];
+      if(!X.length) return `${open}<p class="bt-lead">資料太少，還算不出 BP極端過熱紅燈「勝率穩定 100%」的天數，這一頁先不顯示。</p></section>`;
+      const S=X[0].study.S;
+      return `${open}
+        <p class="bt-lead"><b>研發處的題目，結論還沒定案。</b>BP極端過熱紅燈（簡稱 BP紅燈）之後，從第 ${S} 天起勝率穩定 100%（見 BP紅燈分頁；天數隨資料浮動）。這一頁看<b>第 ${S} 天以後，第一次從高點跌 5%／10% 在什麼時候</b>，以及起跌點前 10 個交易日的籌碼有沒有徵兆。
+          BP過熱紫燈連續 3／5／10 天也當成 BP紅燈的概念，用同樣的第 ${S} 天、同樣的表一～表五來看，可以在下面切換。</p>
+        ${histHtml(s,'紫色箭頭＝起算訊號（下面選的那一個），橘色箭頭＝起跌點（標 5%／10%）。')}
+        <div class="bt-chartbar bt-lev"><span class="bt-note">起算訊號</span><div class="tabs" id="${s.id}-pick">${X.map((x,j)=>`<button data-k="${j}"${j?'':' class="on"'}>${x.name}</button>`).join('')}</div></div>
+        <div id="${s.id}-body">${studyBody(s,X[0].study,X[0].name)}</div>
       </section>`;
     };
     const section=(s,k)=>s.kind==='study'?studySection(s,k):`
@@ -1438,8 +1478,8 @@ function renderSignals(){
           </ul></li>
         <li><b>研發處</b>（研究中、結論還沒定案）：
           <ul>
-            <li><b>BP過熱紫燈連續 5 天</b>：BP過熱紫燈連續亮燈（中間沒亮 3 個交易日以內仍算同一段）亮到第 5 個亮燈日那天＝訊號日，一段只算一次；持有週期、「第一次穩定達到 100%」、走勢與出場方式比較的算法同 BP極端過熱紅燈。「研究」一段另外比較嚴格連續（中間沒亮 0 天）與中間沒亮 5 個交易日以內的算法，以及從一段的首日進場（要事後才知道會亮滿 5 天，只能參考）。</li>
-            <li><b>BP紅燈之後的起跌點</b>：從 BP極端過熱紅燈首日起追蹤最高收盤，「第一次穩定達到 100%」那天（第 S 天）以後，第一次收盤比最高收盤低 5%／10%，那個最高收盤的日子＝起跌點。前 1～10 個交易日＝起跌點前 10 個交易日；10 日變化＝前一天收盤比前 11 天收盤。外資期貨淨單＝工作表1 外資(大小台)期貨未平倉；外資現貨＝外資現貨買賣超（億元）；SC 前 10%＝Sheet1 外資 SC 金額逐日前 10%；微台看多＝AO 欄、微台持倉百分位＝「多單持倉占比百分位」（2024/07/29 起）；散戶看多（小+微）＝AS 欄。波段高點：收盤從高點回落 10% 才確認，之後從低點反彈 10% 才開始找下一個高點。</li>
+            <li><b>BP過熱紫燈連續 3／5／10 天</b>（把連續紫燈當成 BP紅燈的概念）：BP過熱紫燈連續亮燈（3 天：中間沒亮 1 個交易日以內仍算同一段；5、10 天：3 個交易日以內）亮到第 N 個亮燈日那天＝訊號日，一段只算一次；持有週期、「第一次穩定達到 100%」、走勢與出場方式比較的算法同 BP極端過熱紅燈。「研究」一段另外比較嚴格連續（中間沒亮 0 天）與中間沒亮 5 個交易日以內的算法，以及從一段的首日進場（要事後才知道會亮滿 N 天，只能參考），並列出每一段和 BP紅燈重疊多少。</li>
+            <li><b>BP紅燈之後的起跌點</b>（起算訊號可切換：BP紅燈或 BP過熱紫燈連續 3／5／10 天，一律用 BP紅燈的第 S 天）：從起算訊號首日起追蹤最高收盤，「第一次穩定達到 100%」那天（第 S 天）以後，第一次收盤比最高收盤低 5%／10%，那個最高收盤的日子＝起跌點。前 1～10 個交易日＝起跌點前 10 個交易日；10 日變化＝前一天收盤比前 11 天收盤。外資期貨淨單＝工作表1 外資(大小台)期貨未平倉；外資現貨＝外資現貨買賣超（億元）；SC 前 10%＝Sheet1 外資 SC 金額逐日前 10%；微台看多＝AO 欄、微台持倉百分位＝「多單持倉占比百分位」（2024/07/29 起）；散戶看多（小+微）＝AS 欄。波段高點：收盤從高點回落 10% 才確認，之後從低點反彈 10% 才開始找下一個高點。</li>
           </ul></li>
         <li><b>價格</b>：加權指數收盤價；沒有盤中高低。</li>
         <li><b>天數</b>：所有「費時」「到達天數」「持有週期」都是日曆天（兩個日期相減）。</li>
@@ -1469,6 +1509,12 @@ function renderSignals(){
         pbox.innerHTML=pathBody(s,+b.dataset.h); pathChart($('#'+s.id+'-pc'),s.paths[b.dataset.h],s.turn.stable); });
     });
 
+    // 起跌點研究頁：切換起算訊號（內容與走勢圖箭頭一起換）
+    res.signals.filter(s=>s.kind==='study'&&s.studies&&s.studies.length).forEach(s=>{
+      const pk=$('#'+s.id+'-pick'), box=$('#'+s.id+'-body'); if(!pk||!box) return;
+      pk.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; const j=+b.dataset.k, X=s.studies[j];
+        pk.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b)); box.innerHTML=studyBody(s,X.study,X.name); glossary(box); if(s._mark) s._mark(j); });
+    });
     /* 歷史走勢圖：分頁第一次顯示時才建立（隱藏時量不到寬度） */
     const made={};
     const histChart=s=>{
@@ -1481,14 +1527,15 @@ function renderSignals(){
       (window.__btCharts||(window.__btCharts={}))[s.id]=ch;   // 方便在主控台檢查
       const ser=ch.addAreaSeries({lineColor:'#60A5FA',topColor:'rgba(96,165,250,.2)',bottomColor:'rgba(96,165,250,.02)',lineWidth:1.5,priceFormat:{type:'price',precision:0,minMove:1}});
       ser.setData(mk.d.map((d,i)=>({time:d,value:mk.c[i]})));
-      const study=s.kind==='study', nm=study?'BP紅燈':s.name;
+      // 研發處「起跌點」：箭頭跟著選的起算訊號換，另外標起跌點（橘色、上方朝下）；s._mark(j) 切換
+      const study=s.kind==='study'; let nm=s.name, tops=[], evd=s.idxs.map(i=>mk.d[i]);
       const mcol=s.id==='bp'||study?PURPLE:SIG_COLOR[s.id]||UP;   // BP紅燈用紫色箭頭，與每日籌碼走勢圖一致；BC 系列（高檔）箭頭在上方朝下
-      // 研發處「BP紅燈之後的起跌點」：另外標起跌點（橘色、上方朝下）
-      const tops=study&&s.study?s.study.tops.map(t=>({d:mk.d[t.P],X:t.X.map(x=>x*100+'%').join('／')})):[];
-      ser.setMarkers(s.idxs.map(i=>s.kind==='high'?{time:mk.d[i],position:'aboveBar',color:mcol,shape:'arrowDown'}:{time:mk.d[i],position:'belowBar',color:mcol,shape:'arrowUp'})
-        .concat(tops.map(t=>({time:t.d,position:'aboveBar',color:TOP_MARK,shape:'arrowDown',text:t.X}))).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0));
+      const mark=j=>{ const X=study&&s.studies&&s.studies[j], ix=X?X.study.sig.map(x=>x.i):s.idxs;
+        nm=X?X.name:s.name; evd=ix.map(i=>mk.d[i]); tops=X?X.study.tops.map(t=>({d:mk.d[t.P],X:t.X.map(x=>x*100+'%').join('／')})):[];
+        ser.setMarkers(ix.map(i=>s.kind==='high'?{time:mk.d[i],position:'aboveBar',color:mcol,shape:'arrowDown'}:{time:mk.d[i],position:'belowBar',color:mcol,shape:'arrowUp'})
+          .concat(tops.map(t=>({time:t.d,position:'aboveBar',color:TOP_MARK,shape:'arrowDown',text:t.X}))).sort((a,b)=>a.time<b.time?-1:a.time>b.time?1:0)); };
+      mark(0); s._mark=j=>{ mark(j); if(typeof summary==='function') summary(iFrom.value||mk.d[0],iTo.value||mk.d[LAST]); };
       ch.timeScale().fitContent();
-      const evd=s.idxs.map(i=>mk.d[i]);
       const show=t=>{ const i=t?mk.idxOf.get(t):LAST, tp=tops.find(x=>x.d===mk.d[i]); lg.innerHTML=`<b>${dt(mk.d[i])}</b> 加權 <b>${fmt(mk.c[i])}</b>${evd.includes(mk.d[i])?` ・<span style="color:${mcol}">${nm}</span>`:''}${tp?` ・<span style="color:${TOP_MARK}">起跌點（${tp.X}）</span>`:''}`; };
       show(); ch.subscribeCrosshairMove(p=>show(p&&tStr(p.time)));
       /* ---- 日期區間：滑鼠滾輪放大縮小、按住拖曳左右移動；快速按鈕與起訖日期；雙擊回到全部 ---- */

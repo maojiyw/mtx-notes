@@ -13,8 +13,8 @@ window.MTXBacktest = (function(){
   const PULLBACKS = [0.05, 0.10, 0.15, 0.20];
   const REGIME_HOLDS = [30, 60];
   const BP_PCT = 0.02, BP_START = '2012-01-01', BP_COOLDOWN = 10;
-  // 研發處：BP過熱紫燈連續 5 天；中間沒亮 3 個交易日以內仍算同一段（2026-11-27 決定），另外比較中斷容許 0／3／5 個交易日
-  const STREAK_K = 5, STREAK_GAP = 3, STREAK_GAPS = [0, 3, 5];
+  // 研發處：BP過熱紫燈連續 3／5／10 天（2026-11-27 決定：3 天只容許中斷 1 天，5、10 天容許中斷 3 天），各自另外比較不同的中斷天數
+  const STREAKS = [[3, 1, [0, 1]], [5, 3, [0, 3, 5]], [10, 3, [0, 3, 5]]];   // [亮滿幾天, 容許中斷幾個交易日, 比較的中斷天數]
   const DAY = 864e5;
 
   const dayNum = s => Date.UTC(+s.slice(0,4), +s.slice(5,7)-1, +s.slice(8,10)) / DAY;
@@ -260,13 +260,15 @@ window.MTXBacktest = (function(){
     { id: 'bcx', name: 'BC紫爆', label: 'BC紫爆（T 欄前 1%）', desc: '外資(BC)OP未平倉金額與結算比（T 欄）達到當天以前所有資料的前 1%', kind: 'high', col: '外資(BC)OP未平倉金額與結算比（工作表1 T 欄）', pct: 0.01,
       detect(ctx){ return pctDetect(ctx.mk, r => r.bcRel, 0.01); } },
     // 以下 2026-11-27 新增「研發處」（lab: true）：研究中、結論還沒定案的題目，定案後再移到正式分類
-    // BP過熱紫燈連續 5 天：連續亮燈（中間沒亮 3 個交易日以內仍算同一段）到第 5 個亮燈日那天＝訊號日。當天就知道已經亮滿 5 天，可以照做；一段只算一次
-    { id: 'bpv5', name: 'BP過熱紫燈連續 5 天', label: 'BP過熱紫燈連續 5 天（第 5 個亮燈日）', desc: 'BP過熱紫燈連續亮到第 5 個亮燈日的那一天（中間沒亮 3 個交易日以內仍算連續，一段只算一次）', kind: 'low', col: '外資 BP 金額', pct: 0.10, lab: true, turn: true,
-      streak: { K: STREAK_K, gap: STREAK_GAP, gaps: STREAK_GAPS },
-      detect(ctx){ const d = pctDetect(ctx.mk, r => r.bp, 0.10); const kept = streaks(d.lit, STREAK_GAP).filter(w => w.n >= STREAK_K).map(w => w.days[STREAK_K - 1]);
-        return { raw: kept.length, kept, removed: [], lit: d.lit }; } },
-    // BP紅燈之後的起跌點：研究頁（kind 'study'），訊號日同 BP紅燈，不跑一般的表格；內容由 run() 用 BP紅燈的結果另外算（topStudy）
-    { id: 'bpout', name: 'BP紅燈之後的起跌點', label: 'BP紅燈之後的起跌點（勝率穩定 100% 以後第一次跌 5%／10%）', desc: 'BP極端過熱紅燈勝率穩定 100% 那天以後，第一次從高點跌 5%／10% 在什麼時候；起跌點前 10 天的籌碼', kind: 'study', lab: true,
+    // BP過熱紫燈連續 N 天：連續亮燈（中間沒亮 gap 個交易日以內仍算同一段）到第 N 個亮燈日那天＝訊號日。當天就知道已經亮滿 N 天，可以照做；一段只算一次
+    //   3 天：只容許中斷 1 天；5 天、10 天：容許中斷 3 天（2026-11-27 決定）
+    ...STREAKS.map(([K, gap, gaps]) => ({ id: 'bpv' + K, name: `BP過熱紫燈連續 ${K} 天`, label: `BP過熱紫燈連續 ${K} 天（第 ${K} 個亮燈日）`,
+      desc: `BP過熱紫燈連續亮到第 ${K} 個亮燈日的那一天（中間沒亮 ${gap} 個交易日以內仍算連續，一段只算一次）`, kind: 'low', col: '外資 BP 金額', pct: 0.10, lab: true, turn: true,
+      streak: { K, gap, gaps },
+      detect(ctx){ const d = pctDetect(ctx.mk, r => r.bp, 0.10); const kept = streaks(d.lit, gap).filter(w => w.n >= K).map(w => w.days[K - 1]);
+        return { raw: kept.length, kept, removed: [], lit: d.lit }; } })),
+    // 起跌點研究：研究頁（kind 'study'），訊號日同 BP紅燈，不跑一般的表格；內容由 run() 另外算（topStudy），BP過熱紫燈連續 3／5／10 天也用同一套算法
+    { id: 'bpout', name: 'BP紅燈之後的起跌點', label: 'BP紅燈之後的起跌點（勝率穩定 100% 以後第一次跌 5%／10%）', desc: 'BP極端過熱紅燈與 BP過熱紫燈連續 3／5／10 天，在 BP紅燈勝率穩定 100% 那天以後，第一次從高點跌 5%／10% 在什麼時候；起跌點前 10 天的籌碼', kind: 'study', lab: true,
       detect(ctx){ return SIGNALS.find(s => s.id === 'bp').detect(ctx); } },
   ];
 
@@ -560,10 +562,17 @@ window.MTXBacktest = (function(){
       return { id: sig.id, name: sig.name, label: sig.label, desc: sig.desc || '', raw: det.raw, count: det.kept.length, removed: det.removed, idxs: det.kept,
         holds, regimeHolds, turn, paths, exits, flatCmp, hw, streak, lab: sig.lab, kind: sig.kind, col: sig.col, pct: sig.pct, ...res };
     });
-    // 研發處「BP紅燈之後的起跌點」：用 BP紅燈的訊號日與「第一次穩定 100%」的天數 S（資料太少、算不出 S 時不算）
-    const red = signals.find(s => s.id === 'bp');
+    // 研發處「起跌點」：BP紅燈與 BP過熱紫燈連續 3／5／10 天，一律從 BP紅燈「第一次穩定 100%」那天（第 S 天）起算（把連續紫燈當成 BP紅燈的概念；資料太少、算不出 S 時不算）
+    const red = signals.find(s => s.id === 'bp'), S0 = red && red.turn && red.turn.stable;
+    const streakSigs = signals.filter(s => s.streak);
+    // 連續紫燈和 BP紅燈重疊多少：每一段裡 BP紅燈（前 2%）亮了幾天、BP紅燈首日（冷卻 10 個交易日）在這一段前後的哪一天
+    const redLit = pctDetect(mk, r => r.bp, BP_PCT).lit;
+    streakSigs.forEach(s => { const R = s.streak.rows.find(r => r.gap === s.streak.gap);
+      s.overlap = R.waves.map(w => { const fr = red ? red.idxs.find(t => t >= w.start - BP_COOLDOWN && t <= w.end) : undefined;
+        return { start: w.start, end: w.end, n: w.n, conf: w.conf, live: w.live, redDays: redLit.filter(t => t >= w.start && t <= w.end).length, redFirst: fr == null ? null : fr }; }); });
     signals.forEach(s => { if(s.kind !== 'study') return;
-      s.study = red && red.turn && red.turn.stable ? topStudy(mk, red.idxs, red.turn.stable) : null;
+      s.studies = S0 ? [red, ...streakSigs].map(x => ({ id: x.id, name: x.id === 'bp' ? 'BP紅燈' : x.name, study: topStudy(mk, x.idxs, S0) })) : [];
+      s.study = s.studies.length ? s.studies[0].study : null;
       if(s.study) s.label = `${s.name}（第 ${s.study.S} 天以後第一次跌 5%／10%）`; });
     return { mk, signals, first: mk.d[0], last: mk.d[mk.n-1], days: mk.n };
   }
