@@ -862,9 +862,9 @@ const btTone = (v,color) => typeof v==='number' ? (color?cls(v):'') : (typeof v=
 // 欄位：[資料欄, 表頭, 格式, 選項]；選項 c＝正負上色、t＝文字靠左
 const BT_COLS = {
   excess:[['持有週期','持有週期'],['訊號樣本數','訊號樣本數'],['訊號勝率','訊號勝率','pct0'],['基準勝率','基準勝率','pct0'],['超額勝率','超額勝率','pct','c'],['訊號期望值','訊號期望值','pct'],['基準期望值','基準期望值','pct'],['超額期望值','超額期望值','pct','c']],
-  events:[['首日日期','首日日期'],['首日收盤','首日收盤','num'],['30日最低跌幅','30日內最低跌幅','pct'],['30日最低日期','30日最低日期'],['30日最低收盤','30日最低收盤','num'],['到達30日最低(天)','到達最低(天)'],
-    ['站回首日日期','站回首日日期'],['站回首日費時','自最低站回首日(天)'],['再跌破首日日期','再跌破首日日期'],['再跌破首日費時','站回後再跌破(天)'],
-    ['波段低點跌幅','波段低點跌幅','pct'],['波段低點日期','波段低點日期'],['波段低點收盤','波段低點收盤','num'],['到達波段低點(天)','到達波段低點(天)'],['波段低點確認日','波段低點確認日'],
+  events:[['首日日期','首日日期'],['首日收盤','首日收盤','num'],['30日最低跌幅','30日內最低跌幅','pct'],['到達30日最低(天)','到達30日最低(天)'],['30日最低日期','30日最低日期'],['30日最低收盤','30日最低收盤','num'],
+    ['站回首日費時','自最低站回首日(天)'],['站回首日日期','站回首日日期'],['再跌破首日日期','再跌破首日日期'],['再跌破首日費時','站回後再跌破(天)'],
+    ['波段低點跌幅','波段低點跌幅','pct'],['到達波段低點(天)','到達波段低點(天)'],['波段低點日期','波段低點日期'],['波段低點收盤','波段低點收盤','num'],['波段低點確認日','波段低點確認日'],
     ['前高日期','前高日期'],['前高收盤','前高收盤','num'],['突破日期','突破前高日期'],['突破前高費時','突破前高費時(天)'],['盤勢','盤勢','','t']],
   summary:[['評估基準','評估基準','','t'],['持有週期','持有週期'],['樣本數','樣本數'],['未完成','未完成'],['勝率','勝率','pct0'],['期望值','期望值','pct'],['平均獲利W','平均獲利W','pct'],['平均虧損L','平均虧損L','pct'],['盈虧比','盈虧比','num'],
     ['報酬標準差','報酬標準差','pct0'],['最差10%報酬','最差10%報酬','pct'],['最大單次漲幅','最大單次漲幅','pct'],['最大單次跌幅','最大單次跌幅','pct'],['平均最大漲幅','平均最大漲幅','pct'],['中位數最大漲幅','中位數最大漲幅','pct'],['平均最大跌幅','平均最大跌幅','pct'],['中位數最大跌幅','中位數最大跌幅','pct']],
@@ -877,17 +877,42 @@ const BT_COLS = {
 };
 // 穩健性檢查的欄位依持有天數產生（BP紅燈會多「第一次穩定 100%」那天與 120 天）
 const btRegCols=(head,holds)=>head.concat(holds.flatMap(H=>[[`${H}天勝率`,`${H}天勝率`,'pct0'],[`${H}天期望值`,`${H}天期望值`,'pct','c'],[`${H}天基準期望值`,`${H}天基準`,'pct'],[`${H}天超額`,`${H}天超額`,'pct','c']]));
+/* 表一（訊號日期追蹤表）的欄位：預設只顯示主要欄位；按「展開全部欄位」後，欄位標題旁的 ◂ 可逐一隱藏。
+   所有訊號的表一共用同一個設定，記在瀏覽器裡（evState.custom＝已展開自訂，hide＝自訂時隱藏的欄位） */
+const EV_DEF=['首日日期','首日收盤','30日最低跌幅','波段低點跌幅','到達波段低點(天)','突破前高費時','盤勢'];
+const EV_KEY='mtx-bt-evcols';
+let evState=(()=>{ try{ const v=JSON.parse(localStorage.getItem(EV_KEY)); if(v&&Array.isArray(v.hide)) return {custom:!!v.custom,hide:v.hide}; }catch(e){} return {custom:false,hide:[]}; })();
+const evHidden=()=>evState.custom?evState.hide:BT_COLS.events.map(c=>c[0]).filter(f=>!EV_DEF.includes(f));
+function evCtl(){
+  const h=evHidden().length, n=BT_COLS.events.length-h;
+  return (h?`<button type="button" class="nmore" data-ev="all">▾ 展開全部欄位</button>`:'')+(evState.custom?`<button type="button" class="nmore" data-ev="def">▴ 回到預設 ${EV_DEF.length} 欄</button>`:'')
+    +`<span class="bt-note">${evState.custom?`目前顯示 ${n} 欄；點欄位標題旁的 ◂ 可隱藏那一欄${h?'，按「展開全部欄位」會全部再顯示':''}。`:`目前只顯示 ${n} 個主要欄位，可以全部展開；展開後點欄位標題旁的 ◂ 可逐一隱藏，自訂要看哪些欄位（記在這個瀏覽器裡）。`}</span>`;
+}
+function evApply(){
+  const hid=evHidden();
+  let st=document.getElementById('evColCss'); if(!st){ st=document.createElement('style'); st.id='evColCss'; document.head.appendChild(st); }
+  st.textContent=BT_COLS.events.map((c,j)=>j&&hid.includes(c[0])?`table.ev-t .ec-${j}{display:none}`:'').join('')+(evState.custom?'':'table.ev-t .ev-x{display:none}');
+  document.querySelectorAll('.ev-ctl').forEach(el=>el.innerHTML=evCtl());
+  try{ localStorage.setItem(EV_KEY,JSON.stringify(evState)); }catch(e){}
+}
+document.addEventListener('click',e=>{
+  const x=e.target.closest('.ev-x'), b=e.target.closest('[data-ev]'); if(!x&&!b) return;
+  if(x){ const f=BT_COLS.events[+x.dataset.ec][0]; if(!evState.hide.includes(f)) evState.hide.push(f); }
+  else evState={custom:b.dataset.ev==='all',hide:[]};
+  evApply();
+});
 function btTable(key,rows,{rowId,group,cols}={}){
-  const C=cols||BT_COLS[key]; let prev=null;
+  const C=cols||BT_COLS[key]; let prev=null; const ev=key==='events', cc=j=>ev?` ec-${j}`:'';
   const body=rows.map(r=>{
     const k=[];
     if(key==='summary'){ const b=r['評估基準']; if(b.startsWith('無條件')) k.push('base'); if(b.includes('參考用')) k.push('ref'); }
     if(group){ const g=r[group]; if(prev!==null&&g!==prev) k.push('grp'); prev=g; }
     const id=rowId?` id="${rowId(r)}"`:'';
-    return `<tr${id}${k.length?` class="${k.join(' ')}"`:''}>${C.map(([f,,fm,o])=>{ const v=r[f], t=btTone(v,o==='c');
-      return `<td class="${o==='t'?'tx':'r'}${t?' '+t:''}">${btFmt(v,fm)}</td>`; }).join('')}</tr>`;
+    return `<tr${id}${k.length?` class="${k.join(' ')}"`:''}>${C.map(([f,,fm,o],j)=>{ const v=r[f], t=btTone(v,o==='c');
+      return `<td class="${o==='t'?'tx':'r'}${t?' '+t:''}${cc(j)}">${btFmt(v,fm)}</td>`; }).join('')}</tr>`;
   }).join('');
-  return `<div class="bt-scroll noterm"><table class="t bt"><thead><tr>${C.map(([,h,,o])=>`<th class="${o==='t'?'tx':'r'}">${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const th=C.map(([,h,,o],j)=>`<th class="${o==='t'?'tx':'r'}${cc(j)}">${h}${ev&&j?`<button type="button" class="ev-x" data-ec="${j}" title="隱藏這一欄" aria-label="隱藏「${h}」">◂</button>`:''}</th>`).join('');
+  return `${ev?`<div class="ev-ctl">${evCtl()}</div>`:''}<div class="bt-scroll noterm"><table class="t bt${ev?' ev-t':''}"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 const btPick = (rows,cond) => rows.find(r=>Object.entries(cond).every(([k,v])=>r[k]===v))||{};
 const bv = (v,f,color) => { const t=btTone(v,color); return `<b class="num${t?' '+t:''}">${btFmt(v,f)}</b>`; };
@@ -1520,7 +1545,8 @@ function renderSignals(){
         <li><b>天數</b>：所有「費時」「到達天數」「持有週期」都是日曆天（兩個日期相減）。</li>
         <li><b>冷卻期</b>：訊號出現後 10 個交易日內的訊號不另計，以最後一個「計入」的訊號為起點。</li>
         <li><b>30日內最低點</b>：首日起 30 個日曆天內（含首日）的最低收盤價。</li>
-        <li><b>波段低點</b>：從首日開始追蹤最低收盤價，直到價格自這個低點反彈 10% 以上才確認（確認日）。小於 10% 的反彈不算，跌勢延續時低點會一直往後更新，所以有時離首日很遠。</li>
+        <li><b>波段低點</b>：從首日開始追蹤最低收盤價，直到價格自這個低點反彈 10% 以上才確認（確認日）。只看首日之後的第一段跌勢：小於 10% 的反彈不算，跌勢延續時低點會一直往後更新，所以有時離首日很遠；反彈 10% 確認後就固定下來，之後再創的新低不再更新，所以可能比「30日內最低點」早。</li>
+        <li><b>盤勢（季線上／季線下）</b>：訊號首日的收盤和當天的季線（60 個交易日收盤平均）比較，大於等於季線＝季線上，否則＝季線下。</li>
         <li><b>自最低站回首日</b>：從 30 日最低點的下一天起，第一次收盤高於首日收盤；天數從最低點起算。<b>站回後再跌破</b>：從站回日的下一天起，第一次收盤低於首日收盤。</li>
         <li><b>前高</b>：首日之前（不含首日）的歷史最高收盤價。<b>突破</b>：首日之後第一次收盤高於前高。</li>
         <li><b>回檔</b>：突破日起，每天的收盤價和「突破日以來的最高收盤（滾動最高）」比較；跌幅第一次超過門檻的日期，以及當時的基準高點。</li>
@@ -1669,6 +1695,7 @@ function renderSignals(){
     show(h||res.signals[0].id);
     window.addEventListener('hashchange',()=>{ const id=location.hash.slice(1).split('-')[0]; if(id) show(id); });
     if(location.hash.length>1){ const t=document.getElementById(location.hash.slice(1)); if(t&&t.tagName!=='SECTION') setTimeout(()=>t.scrollIntoView(),50); }
+    evApply();
     glossary(main);
   }).catch(err=>{
     console.error(err);

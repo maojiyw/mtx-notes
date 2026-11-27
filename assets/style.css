@@ -586,3 +586,15 @@ table.t.bt.jt td .pend{margin-left:6px}
 .fold:not([open])>summary .sub{display:none}
 .fold[open]>summary .fold-last{display:none}
 table.t.bt.jt tr.jhold td{color:var(--muted)}
+/* 訊號回測表一：預設只顯示主要欄位，展開後欄位標題旁的 ◂ 可逐一隱藏 */
+.ev-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 8px}
+.ev-ctl .bt-note{margin:0}
+table.ev-t .ev-x{font:inherit;font-size:11px;line-height:1;color:var(--muted);background:none;border:1px solid var(--line2);border-radius:5px;padding:2px 4px;margin-left:5px;cursor:pointer;vertical-align:1px}
+table.ev-t .ev-x:hover{color:var(--text);border-color:var(--muted)}
+/* 手機：表一欄位縮窄、標題可換行，預設 7 欄不用左右滑 */
+@media (max-width:760px){
+  table.t.bt.ev-t{font-size:10.5px}
+  table.t.bt.ev-t th,table.t.bt.ev-t td{padding:5px 2px}
+  table.t.bt.ev-t td.pend{white-space:normal;word-break:keep-all}
+  table.t.bt.ev-t th{white-space:normal;min-width:3.2em;line-height:1.3;vertical-align:bottom}
+}
